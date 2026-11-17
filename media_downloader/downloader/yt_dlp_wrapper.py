@@ -106,9 +106,9 @@ class YtDlpWrapper:
         if not info:
             raise ValueError("A fonte não retornou informações da mídia.")
         if info.get("_type") in ("playlist", "multi_video") or "entries" in info:
-            raise ValueError("Use a URL de uma mídia individual; playlists não fazem parte da V1.")
+            raise ValueError("Use a URL de uma mídia individual; playlists não são suportadas.")
         if info.get("is_live"):
-            raise ValueError("Transmissões ao vivo não fazem parte da V1.")
+            raise ValueError("Transmissões ao vivo não são suportadas nesta versão.")
         if info.get("has_drm"):
             raise ValueError("Mídia protegida por DRM não é suportada.")
         return info

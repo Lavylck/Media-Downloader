@@ -13,7 +13,8 @@ import unittest
 from media_downloader.downloader.yt_dlp_wrapper import YtDlpWrapper
 from media_downloader.tests.test_ui import wait_until
 from media_downloader.ui.main_window import MainWindow
-from PySide6.QtCore import QCoreApplication, QEvent, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 
@@ -158,10 +159,15 @@ class TestRealMedia(unittest.TestCase):
         timer.timeout.connect(lambda: ticks.append(1))
         timer.start()
         try:
-            win.url_edit.setText(self.base_url + "sample.mp4")
+            clipboard = QApplication.clipboard()
+            previous = clipboard.text()
+            try:
+                clipboard.setText(self.base_url + "sample.mp4")
+                QTest.keyClick(win.url_edit, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+            finally:
+                clipboard.setText(previous)
             win.dest_edit.setText(str(self.dest))
-            win.analyze_btn.click()
-            wait_until(lambda: not win.busy, 20000)
+            wait_until(lambda: not (win.busy or win.analysis_timer.isActive() or win._auto_pending), 20000)
             self.assertIsNotNone(win.media_info, win.status_label.text())
             for container in ("MP4", "MP3"):
                 before = len(ticks)

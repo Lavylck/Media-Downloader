@@ -2,20 +2,22 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, QTimer, Qt, Slot
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-    QProgressBar, QPushButton, QVBoxLayout, QWidget,
+    QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+    QProgressBar, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ..downloader.yt_dlp_wrapper import YtDlpWrapper, validate_url
 from .analysis_worker import AnalysisWorker
 from .download_worker import DownloadWorker
+from .theme import apply_theme, set_style_property
 
 
 class MainWindow(QMainWindow):
     def __init__(self, ydl_wrapper=None, *, analysis_debounce_ms=600):
         super().__init__()
-        self.setWindowTitle("Media Downloader V1")
-        self.resize(720, 440)
+        self.setWindowTitle("Media Downloader · Neon V2")
+        self.setMinimumSize(620, 520)
+        self.resize(840, min(790, self.screen().availableGeometry().height() - 70))
         self.ydl = ydl_wrapper or YtDlpWrapper()
         self.analysis_in_progress = False
         self.download_in_progress = False
@@ -41,65 +43,171 @@ class MainWindow(QMainWindow):
         self.analysis_timer.setInterval(analysis_debounce_ms)
         self.analysis_timer.timeout.connect(self._auto_analyze)
         self.init_ui()
+        apply_theme(self)
         self._update_controls()
 
     def init_ui(self):
+        def label(text, name):
+            widget = QLabel(text)
+            widget.setObjectName(name)
+            widget.setTextFormat(Qt.TextFormat.PlainText)
+            return widget
+
+        def card():
+            frame = QFrame()
+            frame.setObjectName("card")
+            box = QVBoxLayout(frame)
+            box.setContentsMargins(18, 14, 18, 14)
+            box.setSpacing(10)
+            layout.addWidget(frame)
+            return box
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setCentralWidget(scroll)
         central = QWidget()
-        self.setCentralWidget(central)
+        central.setObjectName("appSurface")
+        scroll.setWidget(central)
         layout = QVBoxLayout(central)
+        layout.setContentsMargins(26, 22, 26, 22)
+        layout.setSpacing(14)
+        header = QHBoxLayout()
+        mark = label("MD", "brandMark")
+        mark.setFixedSize(50, 50)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.addWidget(mark)
+        brand = QVBoxLayout()
+        brand.setSpacing(2)
+        for text, name in (("MEDIA DOWNLOADER", "brandTitle"),
+                           ("Sua mídia. Na melhor qualidade.", "subtitle")):
+            heading = label(text, name)
+            heading.setWordWrap(True)
+            brand.addWidget(heading)
+        header.addLayout(brand, 1)
+        header.addWidget(label("NEON / V2", "edition"))
+        layout.addLayout(header)
+
+        source = card()
+        source.addWidget(label("01 / LINK DA MÍDIA", "sectionLabel"))
         url_layout = QHBoxLayout()
+        url_layout.setSpacing(10)
         self.url_edit = QLineEdit()
-        self.url_edit.setPlaceholderText("URL da mídia (HTTP ou HTTPS)")
+        self.url_edit.setObjectName("urlInput")
+        self.url_edit.setAccessibleName("URL da mídia")
+        self.url_edit.setPlaceholderText("Cole seu link aqui…")
+        self.url_edit.setClearButtonEnabled(True)
+        self.url_edit.setMinimumHeight(44)
         self.url_edit.textChanged.connect(self._on_url_changed)
         self.url_edit.returnPressed.connect(self.analyze_url)
         self.analyze_btn = QPushButton("Analisar")
+        self.analyze_btn.setMinimumHeight(44)
+        self.analyze_btn.setToolTip("Analisar novamente, mesmo se o link não mudou (Enter).")
         self.analyze_btn.clicked.connect(self.analyze_url)
-        url_layout.addWidget(self.url_edit)
+        url_layout.addWidget(self.url_edit, 1)
         url_layout.addWidget(self.analyze_btn)
-        layout.addLayout(url_layout)
-        self.title_label = QLabel("Título: —")
-        self.duration_label = QLabel("Duração: —")
+        source.addLayout(url_layout)
+        source_note = label("Análise automática ao colar ou pausar a digitação. Enter para antecipar.", "muted")
+        source_note.setWordWrap(True)
+        source.addWidget(source_note)
+
+        media = card()
+        media.addWidget(label("02 / CONFIGURE SEU DOWNLOAD", "sectionLabel"))
+        self.title_label = label("Título: —", "mediaTitle")
+        self.duration_label = label("Duração: —", "muted")
         self.title_label.setWordWrap(True)
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.duration_label)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        media.addWidget(self.title_label)
+        media.addWidget(self.duration_label)
         fmt_layout = QHBoxLayout()
+        fmt_layout.setSpacing(14)
         self.format_combo = QComboBox()
+        self.format_combo.setAccessibleName("Formato de saída")
         self.format_combo.addItems(["MP4", "MP3"])
         self.format_combo.currentTextChanged.connect(self._update_qualities)
         self.quality_combo = QComboBox()
-        fmt_layout.addWidget(QLabel("Formato:"))
-        fmt_layout.addWidget(self.format_combo)
-        fmt_layout.addWidget(QLabel("Qualidade da fonte:"))
-        fmt_layout.addWidget(self.quality_combo, 1)
-        layout.addLayout(fmt_layout)
-        self.quality_note = QLabel("Conversão não aumenta a qualidade original.")
-        layout.addWidget(self.quality_note)
+        self.quality_combo.setAccessibleName("Qualidade da fonte")
+        self.quality_combo.setMinimumWidth(210)
+        for text, widget, stretch in (("Formato", self.format_combo, 1),
+                                      ("Qualidade da fonte", self.quality_combo, 3)):
+            column = QVBoxLayout()
+            column.setSpacing(5)
+            caption = label(text, "fieldLabel")
+            caption.setBuddy(widget)
+            column.addWidget(caption)
+            column.addWidget(widget)
+            fmt_layout.addLayout(column, stretch)
+        media.addLayout(fmt_layout)
+        self.quality_note = label("Melhor fonte por padrão. Conversão não aumenta a qualidade original.", "muted")
+        self.quality_note.setWordWrap(True)
+        media.addWidget(self.quality_note)
+        media.addWidget(label("Salvar em", "fieldLabel"))
         dest_layout = QHBoxLayout()
         self.dest_edit = QLineEdit(str(Path.home() / "Downloads"))
+        self.dest_edit.setAccessibleName("Pasta de destino")
         self.dest_edit.setPlaceholderText("Pasta de destino")
         self.dest_edit.textChanged.connect(self._update_controls)
         self.dest_btn = QPushButton("Escolher…")
         self.dest_btn.clicked.connect(self.choose_dest)
         dest_layout.addWidget(self.dest_edit)
         dest_layout.addWidget(self.dest_btn)
-        layout.addLayout(dest_layout)
+        media.addLayout(dest_layout)
+
         buttons = QHBoxLayout()
-        self.download_btn = QPushButton("Baixar")
+        self.download_btn = QPushButton("↓  Baixar MP4")
+        self.download_btn.setObjectName("downloadButton")
+        self.download_btn.setAccessibleName("Baixar mídia")
+        self.download_btn.setMinimumHeight(64)
+        self.download_btn.setMinimumWidth(300)
+        self.download_btn.setMaximumWidth(500)
+        self.download_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.download_btn.clicked.connect(self.start_download)
-        self.cancel_btn = QPushButton("Cancelar")
-        self.cancel_btn.clicked.connect(self.cancel_operation)
-        buttons.addWidget(self.download_btn)
-        buttons.addWidget(self.cancel_btn)
+        buttons.addStretch(1)
+        buttons.addWidget(self.download_btn, 4)
+        buttons.addStretch(1)
         layout.addLayout(buttons)
+        self.cancel_btn = QPushButton("Cancelar")
+        self.cancel_btn.setObjectName("cancelButton")
+        self.cancel_btn.setToolTip("Cancelar a operação atual e qualquer análise pendente.")
+        self.cancel_btn.clicked.connect(self.cancel_operation)
+        layout.addWidget(self.cancel_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        progress_header = QHBoxLayout()
+        self.phase_label = label("AGUARDANDO LINK", "phase")
+        self.progress_caption = label("0%", "progressCaption")
+        progress_header.addWidget(self.phase_label)
+        progress_header.addStretch()
+        progress_header.addWidget(self.progress_caption)
+        layout.addLayout(progress_header)
         self.progress = QProgressBar()
+        self.progress.setAccessibleName("Progresso do download")
+        self.progress.setTextVisible(False)
         self.progress.setValue(0)
+        self.progress.valueChanged.connect(self._update_progress_caption)
         layout.addWidget(self.progress)
-        self.status_label = QLabel("Informe uma URL e clique em Analisar.")
+        self.status_label = label("Cole um link para começar. A melhor qualidade será selecionada.", "statusMessage")
         self.status_label.setWordWrap(True)
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.status_label)
-        for label in (self.title_label, self.duration_label, self.status_label):
-            label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addStretch()
+        self.setTabOrder(self.url_edit, self.analyze_btn)
+        self.setTabOrder(self.analyze_btn, self.format_combo)
+        self.setTabOrder(self.format_combo, self.quality_combo)
+        self.setTabOrder(self.quality_combo, self.dest_edit)
+        self.setTabOrder(self.dest_edit, self.dest_btn)
+        self.setTabOrder(self.dest_btn, self.download_btn)
+        self.setTabOrder(self.download_btn, self.cancel_btn)
+        self.url_edit.setFocus()
+
+    def _set_status(self, message, tone="info"):
+        self.status_label.setText(message)
+        set_style_property(self.status_label, "tone", tone)
+
+    @Slot()
+    def _update_progress_caption(self):
+        self.progress_caption.setText("EM ANDAMENTO" if self.progress.maximum() == 0
+                                      else f"{max(0, self.progress.value())}%")
 
     @property
     def busy(self):
@@ -120,6 +228,23 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setEnabled(not self._closing and (
             (self.busy and not self._cancelling) or self.analysis_timer.isActive()
             or self._auto_pending))
+        if self._closing:
+            phase, caption = "ENCERRANDO", "Encerrando…"
+        elif self._cancelling and self.busy:
+            phase, caption = "AGUARDANDO TAREFA ATUAL", "Aguarde…"
+        elif self.download_in_progress:
+            phase, caption = "DOWNLOAD / PROCESSAMENTO", "Baixando…"
+        elif self.analysis_in_progress:
+            phase, caption = "ANALISANDO FONTE", "Analisando…"
+        elif self.analysis_timer.isActive() or self._auto_pending:
+            phase, caption = "ANÁLISE AUTOMÁTICA AGENDADA", "Preparando análise…"
+        else:
+            phase = "PRONTO PARA BAIXAR" if self.download_btn.isEnabled() else "AGUARDANDO CONFIGURAÇÃO"
+            caption = f"↓  Baixar {self.format_combo.currentText()}"
+        self.phase_label.setText(phase)
+        self.download_btn.setText(caption)
+        set_style_property(self.download_btn, "busy", self.busy)
+        self._update_progress_caption()
 
     @Slot()
     def _invalidate_analysis(self):
@@ -151,9 +276,9 @@ class MainWindow(QMainWindow):
         try:
             validate_url(url)
         except ValueError:
-            self.status_label.setText("Cole um link HTTP ou HTTPS completo.")
+            self._set_status("Cole um link HTTP ou HTTPS completo.")
         else:
-            self.status_label.setText("Link detectado. A análise começará automaticamente…")
+            self._set_status("Link detectado. A análise começará automaticamente…")
             self.analysis_timer.start()
         self._update_controls()
 
@@ -169,7 +294,7 @@ class MainWindow(QMainWindow):
         if self._closing or not self._auto_pending:
             return
         if self.busy:
-            self.status_label.setText("Novo link pronto. Aguardando a análise anterior encerrar…")
+            self._set_status("Novo link pronto. Aguardando a análise anterior encerrar…")
             self._update_controls()
             return
         self._auto_pending = False
@@ -191,6 +316,7 @@ class MainWindow(QMainWindow):
         setattr(self, f"{kind}_worker", worker)
         setattr(self, f"{kind}_in_progress", True)
         self._cancelling = False
+        self._cancel_requested = False
         worker.moveToThread(thread)
         if kind == "analysis":
             worker.status.connect(self._on_analysis_status, Qt.ConnectionType.QueuedConnection)
@@ -232,7 +358,7 @@ class MainWindow(QMainWindow):
         self._active_request_id = self._request_serial
         self.last_output = None
         self.progress.setRange(0, 0)
-        self.status_label.setText("Analisando URL…")
+        self._set_status("Analisando URL…")
         worker = AnalysisWorker(self.ydl, url, self._active_request_id)
         worker.info_received.connect(self._on_analysis_info, Qt.ConnectionType.QueuedConnection)
         self._start_worker("analysis", worker)
@@ -273,8 +399,8 @@ class MainWindow(QMainWindow):
         self._update_qualities()
         if not self.quality_combo.count() and self.format_combo.currentText() == "MP4":
             self.format_combo.setCurrentText("MP3")
-        self.status_label.setText("Análise concluída. Selecione formato, qualidade e destino."
-                                  if self.quality_combo.count() else "Nenhum formato disponível.")
+        self._set_status("Análise concluída. Selecione formato, qualidade e destino."
+                         if self.quality_combo.count() else "Nenhum formato disponível.")
 
     @Slot()
     def choose_dest(self):
@@ -304,7 +430,7 @@ class MainWindow(QMainWindow):
             return
         self.last_output = None
         self.progress.setRange(0, 0)
-        self.status_label.setText("Iniciando download…")
+        self._set_status("Iniciando download…")
         worker = DownloadWorker(self.ydl, self.analyzed_url, format_id, outtmpl, postprocessors)
         worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
         worker.completed.connect(self._on_download_completed, Qt.ConnectionType.QueuedConnection)
@@ -317,29 +443,31 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 0 if value < 0 else 100)
         if value >= 0:
             self.progress.setValue(value)
+        self._update_progress_caption()
 
     @Slot(str)
     def _on_download_completed(self, path):
         if not self._closing and not self._cancelling:
             self.last_output = path
-            self.status_label.setText(f"Concluído: {path}")
+            self._set_status(f"Concluído: {path}", "success")
 
     @Slot(str)
     def _on_status(self, message):
         if not self._closing and not self._cancelling:
-            self.status_label.setText(message)
+            self._set_status(message)
 
     @Slot(str)
     def _on_error(self, message):
         if not self._closing and not self._cancelling:
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
-            self.status_label.setText(f"Erro: {message}")
+            self._set_status(f"Erro: {message}", "error")
+            self._update_progress_caption()
 
     @Slot()
     def _on_cancelled(self):
         if not self._closing:
-            self.status_label.setText("Operação cancelada. Arquivos parciais podem ser retomados.")
+            self._set_status("Operação cancelada. Arquivos parciais podem ser retomados.")
 
     def _stopped(self, kind):
         thread = getattr(self, f"{kind}_thread")
@@ -389,8 +517,8 @@ class MainWindow(QMainWindow):
         for worker in (self.analysis_worker, self.download_worker):
             if worker is not None:
                 worker.cancel()
-        self.status_label.setText("Cancelando… aguardando a etapa de rede/FFmpeg terminar."
-                                  if self.busy else "Análise automática cancelada. Use Analisar para tentar novamente.")
+        self._set_status("Cancelando… aguardando a etapa de rede/FFmpeg terminar."
+                         if self.busy else "Análise automática cancelada. Use Analisar para tentar novamente.")
         if not self.busy:
             self._cancelling = False
         self._update_controls()
@@ -401,7 +529,7 @@ class MainWindow(QMainWindow):
         self._auto_pending = False
         if self.busy:
             self.cancel_operation()
-            self.status_label.setText("Encerrando com segurança… aguardando rede/FFmpeg.")
+            self._set_status("Encerrando com segurança… aguardando rede/FFmpeg.")
             event.ignore()
         else:
             event.accept()

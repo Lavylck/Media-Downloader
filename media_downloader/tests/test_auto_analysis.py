@@ -141,6 +141,8 @@ class TestAutoAnalysis(TestUI):
         self.win.analyze_btn.click()
         wait_until(self.settled)
         self.assertEqual(self.wrapper.analysis_calls, 1)
+        self.assertNotIn("cancelada", self.win.status_label.text())
+        self.assertTrue(self.win.download_btn.isEnabled())
 
     def test_cancel_queued_replacement(self):
         self.paste("https://example.com/first")
@@ -167,6 +169,42 @@ class TestAutoAnalysis(TestUI):
         self.assertFalse(self.win.download_btn.isEnabled())
         self.win.dest_edit.setText("C:/Downloads")
         self.assertTrue(self.win.download_btn.isEnabled())
+
+    def test_cta_size_center_and_loading_feedback(self):
+        run_events(50)
+        button = self.win.download_btn
+        self.assertGreaterEqual(button.height(), 64)
+        self.assertGreaterEqual(button.width(), 300)
+        content = self.win.centralWidget().widget()
+        center = button.mapTo(content, button.rect().center()).x()
+        self.assertLess(abs(center - content.width() / 2), 4)
+        self.assertFalse(button.isEnabled())
+        self.paste("https://example.com/loading")
+        wait_until(lambda: self.wrapper.analysis_calls == 1)
+        self.assertIn("Analisando", button.text())
+        self.assertTrue(button.property("busy"))
+        wait_until(self.settled)
+        self.assertFalse(button.property("busy"))
+        self.assertTrue(button.isEnabled())
+        self.win.start_download()
+        self.assertIn("Baixando", button.text())
+        self.assertFalse(self.win.url_edit.isEnabled())
+        wait_until(self.settled)
+        self.assertEqual(self.win.status_label.property("tone"), "success")
+        self.assertEqual(self.win.progress_caption.text(), "100%")
+
+    def test_theme_error_state_and_long_text_small_window(self):
+        self.wrapper.extract_info = lambda *a, **k: {**INFO, "title": "Título longo " * 40}
+        self.win.resize(620, 520)
+        self.paste("https://example.com/long-title")
+        wait_until(self.settled)
+        scroll = self.win.centralWidget()
+        self.assertLessEqual(scroll.widget().width(), scroll.viewport().width())
+        self.assertTrue(self.win.title_label.wordWrap())
+        self.win._on_error("Falha de rede: tente novamente")
+        self.assertEqual(self.win.status_label.property("tone"), "error")
+        self.assertIn("Falha de rede", self.win.status_label.text())
+        self.assertGreater(scroll.verticalScrollBar().maximum(), 0)
 
 
 def load_tests(loader, tests, pattern):
