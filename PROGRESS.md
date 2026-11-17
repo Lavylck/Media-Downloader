@@ -1,8 +1,8 @@
 # Estado da V1 — 2026-11-17
 
-**V1 funcional e validada neste ambiente Windows.** Análise, MP4, MP3, seleção
-de qualidade, progresso, erros e encerramento foram exercitados. Publicação
-privada aguarda autorização; validação humana de reprodução continua recomendada.
+**V1 funcional e validada neste ambiente Windows, publicada em repositório
+privado.** Análise, MP4, MP3, seleção de qualidade, progresso, erros e encerramento
+foram exercitados. Validação humana de reprodução continua recomendada.
 
 ## Concluído e verificado
 
@@ -119,14 +119,19 @@ o template final usa `[mp4-best].mp4` / `[mp3-best].mp3` / `[mp4-144].mp4`.
 ## Git e publicação
 
 - Git original preservado, branch `master`.
-- Commits locais: recuperação `255ce01`, implementação/testes `7676f6d`
-  e documentação/organização em commit separado.
+- Commits validados publicados: recuperação `255ce01`, implementação/testes
+  `7676f6d` e documentação/organização `df27868`, preservando todo o histórico.
 - Autor técnico local dos commits: `OpenCode <opencode@localhost>`;
   configuração global do usuário não alterada.
 - GitHub CLI autenticado como `Lavylck`.
-- Nenhum remoto configurado. Consulta a `Lavylck/Media-Downloader` não encontrou
-  repositório acessível com esse nome.
-- **Nenhum repositório remoto criado e nenhum push executado.**
-- Próximo passo, exclusivamente após autorização: criar
-  `Lavylck/Media-Downloader` com visibilidade **private**, configurar `origin`
-  e enviar os commits locais.
+- Criação e push autorizados explicitamente pelo proprietário.
+- Antes do push, revisados os três commits completos: 51 versões de arquivos,
+  37 caminhos históricos e mensagens de commit. Nenhum caminho de credenciais,
+  ambiente virtual, cache, backup ou histórico privado incluído; nenhuma
+  assinatura de credencial encontrada na inspeção de conteúdo.
+- Repositório: https://github.com/Lavylck/Media-Downloader
+- Visibilidade **PRIVATE**, confirmada pela API do GitHub antes do push.
+- `origin`: `https://github.com/Lavylck/Media-Downloader.git`.
+- `git push -u origin master` concluído; branch local acompanha `origin/master`.
+- Registro da publicação em commit adicional somente de documentação.
+- Nenhum desenvolvimento de V2 iniciado.
