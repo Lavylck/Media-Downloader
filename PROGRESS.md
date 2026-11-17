@@ -1,6 +1,6 @@
-# Estado do projeto — evolução V2 em desenvolvimento
+# Estado do projeto — Neon V2 validada localmente
 
-## Checkpoint desta etapa
+## Estado atual e checkpoint
 
 - Usuário confirmou manualmente: app abre, analisa, baixa e a V1 é utilizável.
 - V1 preservada em `master`, commit `948ef054d82bdc87ba1327205ea24464d6c27a1f`,
@@ -9,19 +9,144 @@
 - Baseline novamente executada: **36 testes aprovados, zero skips, em 8,751 s**.
 - Escopo: análise automática com debounce/invalidação, CTA principal, tema roxo
   neon, fluidez e documentação reutilizável para agentes locais.
-- Análise automática implementada: debounce de 600 ms, requisições identificadas,
-  substituição segura do link, cancelamento e supressão de repetições.
-- Primeira validação V2: **46 testes aprovados em 14,203 s**, incluindo os 36
-  testes de regressão e 10 novos casos de digitação, colagem e concorrência.
-- Tema, CTA e documentação reutilizável: em andamento.
+- **Etapa V2 implementada e validada por automação e fontes reais.**
+  Aceite humano do novo visual ainda pendente.
+- A retomada conferiu os três arquivos modificados deixados pela interrupção;
+  a implementação parcial foi continuada, sem reinicialização ou duplicação.
+
+## Funcionalidades V2 concluídas
+
+- Análise automática após **600 ms** da última alteração de uma URL válida,
+  inclusive Ctrl+V. Botão Analisar/Enter continuam como alternativa manual.
+- URL editável durante análise. Mudança invalida imediatamente a mídia anterior,
+  cancela cooperativamente a tarefa e mantém apenas a última intenção pendente.
+- IDs únicos por tentativa e revisão de entrada bloqueiam resultados/status/
+  erros/cancelamentos obsoletos. Uma única tarefa até terminar o cleanup nativo.
+- Mesma URL sem mudança significativa não provoca nova análise automática;
+  espaços externos são ignorados. Erros/cancelamentos não criam retry infinito.
+- Fechar ou cancelar elimina timer e intenção pendente. Reanálise manual continua
+  funcionando após cancelamento.
+- Tema cyberpunk discreto, escuro/roxo neon em QSS centralizado, SVG local,
+  tipografia legível, cards, inputs/combos harmonizados e barra estilizada.
+- CTA central, altura mínima 64 px, estados normal/hover/clique/foco/desabilitado/
+  carregando. Cancelar secundário; indicação de fase e progresso textual.
+- Download só habilitado para a mídia atual, qualidade disponível e destino
+  informado. Destino vazio desabilita imediatamente; erros de acesso ficam
+  no worker. Melhor qualidade automática preservada.
+- Teclado, nomes acessíveis, títulos externos como texto puro, linhas quebradas
+  e scroll vertical para janela pequena/DPI elevado.
+
+### Fluidez e otimizações verificáveis
+
+- Debounce e deduplicação reduzem análises redundantes. Cada smoke externo
+  registrou **uma análise da GUI por colagem**, sem clique no botão.
+- Rede/FFmpeg continuam nos workers. QSS é carregado uma vez por processo;
+  propriedades visuais só são reaplicadas quando mudam.
+- Throttle de progresso da V1 preservado; não há animação pesada ou asset remoto.
+- Não foi feita promessa de acelerar servidores externos. Download continua
+  reextraindo metadados para não reutilizar URLs assinadas expiradas.
+
+## Validação executada nesta etapa
+
+| Verificação | Resultado real |
+|---|---|
+| Baseline antes das mudanças | 36 testes, zero skips, 8,751 s |
+| Primeira etapa, debounce | 46 testes aprovados em 14,203 s |
+| Suíte final offscreen | **48 aprovados, zero skips, 16,398 s** |
+| Suíte Windows nativo | **48 aprovados, zero skips, 16,146 s** |
+| Suíte Windows com `QT_SCALE_FACTOR=1.5` | **48 aprovados, zero skips, 16,695 s** |
+| Diagnóstico e imports | Python/venv, PySide6, yt-dlp/EJS, FFmpeg/FFprobe e Node OK |
+| `pip check` | No broken requirements found |
+| `git diff --check` | Sem erros |
+
+Comando da suíte:
+
+```powershell
+.\.venv\Scripts\python.exe -X faulthandler -m unittest discover -s media_downloader/tests -v
+```
+
+Para backend nativo, definir `$env:QT_QPA_PLATFORM = 'windows'`. Na verificação
+adicional foi usada escala Qt forçada de 150%, sem alterar configurações do SO.
+
+Os 36 casos da V1 continuam na suíte; foram adicionados 12 casos de autoanálise/
+UI. O fluxo real HTTP local também passou a usar Ctrl+V sem clique em Analisar.
+Há testes de timers Qt, duplicatas, formato inferior, MP3, DASH combinado,
+transcode real, cancelamento/fechamento, falhas e arquivos com FFprobe.
+
+### Smokes externos por colagem automática
+
+```powershell
+.\.venv\Scripts\python.exe -m media_downloader.tests.public_smoke --output test-artifacts/v2-public
+.\.venv\Scripts\python.exe -m media_downloader.tests.public_smoke --url 'https://www.youtube.com/watch?v=jNQXAC9IVRw' --video-height 144 --output test-artifacts/v2-youtube --screenshot test-artifacts/v2-ui/ready-youtube.png
+```
+
+- **W3Schools:** MP4 788.493 bytes, H.264/AAC, 10,026667 s; MP3 296.468 bytes,
+  10,005333 s. 112 ticks Qt; maior intervalo observado 41 ms; uma análise da GUI.
+- **YouTube, backend Windows:** “Me at the zoo”, 19 s, 25 formatos, qualidades
+  reais 240p/144p. MP4 509.329 bytes, H.264/AAC, **144p confirmado pelo FFprobe**,
+  19,063356 s; MP3 231.650 bytes, 19,063583 s. 432 ticks Qt; maior intervalo
+  observado 42 ms; uma análise da GUI. Nenhum aviso de JavaScript.
+- Os quatro arquivos terminaram com progresso 100% e foram conferidos com
+  FFprobe. Essas medições são observações dos smokes, não garantias de latência.
+- Capturas nativas de início e estado pronto foram inspecionadas:
+  `test-artifacts/v2-ui/startup.png` e `ready-youtube.png`.
+- Artefatos/downloads permanecem locais e ignorados pelo Git.
+
+### Problemas descobertos e corrigidos nesta etapa
+
+- Sinais da análise precisaram transportar identidade de tentativa para rejeitar
+  respostas antigas; testes/observadores foram adaptados ao contrato real.
+- Estado de cancelamento poderia sobreviver à próxima tentativa manual; reset
+  no início do worker e teste de status final impedem mensagem falsa de cancelamento.
+- Teste de janela 620×520 falhou inicialmente: conteúdo 954 px para viewport 610,
+  causado por texto auxiliar sem quebra de linha sob fonte de fallback. Wrapping
+  corrigido; teste passou em offscreen, Windows e escala 150%.
+- CTA da base permanecia habilitado com pasta vazia; agora acompanha edição
+  do destino. Nenhuma regressão conhecida nos fluxos exercitados.
+
+## Documentação para outras IAs
+
+- `AGENTS.md`: contrato **específico** deste aplicativo, estado assíncrono,
+  sinais, tema, caminhos, branch/permissões e validação.
+- `LESSONS_LEARNED.md`: incidentes reais com evidência/grau de certeza,
+  correções e regras generalizáveis, sem atribuir causas não demonstradas.
+- `GLOBAL_AGENT_TEMPLATE.md`: modelo **geral**, adaptável a projetos novos e
+  agentes locais (Qwen/Gemma etc.), com contrato, execução, evidência e retomada.
+- `PROJECT_BOOTSTRAP_CHECKLIST.md`: roteiro **geral** com entregáveis verificáveis,
+  ambiente Windows, baseline, arquitetura, testes, UI, documentação e publicação.
+- `README.md`: uso atualizado da autoanálise, tema e roteiro de teste manual.
+
+## Limitações e próximos passos desta etapa
+
+- O usuário ainda precisa avaliar o visual V2 e a experiência com seus links;
+  não foi inventado aceite humano da nova interface.
+- Cancelamento aguarda a chamada de rede/etapa FFmpeg atual. O próximo link só
+  começa após limpeza segura, mantendo a janela responsiva.
+- Fontes podem omitir duração/resolução, retirar mídia ou mudar requisitos.
+  Não há suporte prometido a todas as URLs do yt-dlp.
+- Permanecem fora do escopo: playlists, lives, DRM e instalador standalone.
+- Deduplicação de arquivos continua por caminho/seleção, sem coordenação entre
+  instâncias. Não há cache persistente de links assinados.
+- Próximo passo: avaliação manual do novo visual conforme README; publicação
+  ou merge somente com nova autorização do proprietário.
+
+## Git desta etapa
+
+- Branch ativa: **`feature/v2`**.
+- `master` e `origin/master` preservadas em `948ef05`.
+- Commits de implementação: `4ce7765` (análise automática) e `83277f9`
+  (tema/CTA, fluxo real e regressão), mais documentação em commit separado.
+- Repositório privado existente preservado. **Nenhum push, novo remoto ou
+  alteração da branch master nesta etapa.**
 
 ## Histórico da entrega V1 — 2026-11-17
 
 **V1 funcional e validada neste ambiente Windows, publicada em repositório
 privado.** Análise, MP4, MP3, seleção de qualidade, progresso, erros e encerramento
-foram exercitados. Validação humana de reprodução continua recomendada.
+foram exercitados. O registro abaixo é histórico; a confirmação manual posterior
+do usuário e o estado da V2 estão descritos no topo.
 
-## Concluído e verificado
+### Concluído e verificado na V1
 
 - Auditoria de todos os módulos/testes recebidos, Git e ambiente: `AUDIT.md`.
 - Backup anterior às alterações e commit de recuperação `255ce01`.
@@ -46,7 +171,7 @@ foram exercitados. Validação humana de reprodução continua recomendada.
   Node 26.13.1 habilitado automaticamente. Deno não foi necessário.
 - FFmpeg/FFprobe 9.0.2 reais detectados. Nenhuma instalação global efetuada.
 
-## Correção adicional descoberta durante validação
+### Correção adicional descoberta durante validação da V1
 
 As primeiras execuções ampliadas expuseram abortos intermitentes ao liberar
 wrappers Python quando `QThread.finished` era emitido, antes de finalizar a
@@ -60,9 +185,9 @@ A instrumentação inicial que sobrescrevia slots herdados também foi substitu�
 por QObject observador com slots próprios; as verificações de thread passaram.
 Essas falhas intermediárias foram investigadas, não tratadas como aprovação.
 
-## Testes executados
+### Testes executados na V1
 
-### Suíte final
+#### Suíte final
 
 ```powershell
 .\.venv\Scripts\python.exe -X faulthandler -m unittest discover -s media_downloader/tests -v
@@ -93,7 +218,7 @@ Cobertura comportamental:
 - HTTP 404, FFmpeg ausente, destino que é arquivo, duplicata preservada sem
   nova transferência e nomes Windows em pasta com `%`.
 
-### Fontes públicas (rede externa real)
+#### Fontes públicas (rede externa real)
 
 Executadas pelo fluxo da janela/workers via
 `python -m media_downloader.tests.public_smoke`.
@@ -109,7 +234,7 @@ Arquivos de validação preservados em `test-artifacts/` e ignorados pelo Git.
 Os primeiros arquivos externos usam o nome anterior com extensão repetida;
 o template final usa `[mp4-best].mp4` / `[mp3-best].mp3` / `[mp4-144].mp4`.
 
-### Outras verificações
+#### Outras verificações
 
 - Entrada `media_downloader.main.main()` executada com backend Windows;
   janela visível, captura `test-artifacts/startup-windows.png` inspecionada
@@ -120,7 +245,7 @@ o template final usa `[mp4-best].mp4` / `[mp3-best].mp3` / `[mp4-144].mp4`.
 - `git diff --check`: sem erros de whitespace.
 - `git check-ignore`: `.venv`, backups, histórico exportado e artefatos excluídos.
 
-## Limitações e pendências
+### Limitações registradas na entrega inicial
 
 - Reprodução visual/auditiva humana não foi executada. Procedimento curto
   no README; binários foram verificados com FFprobe.
@@ -133,7 +258,7 @@ o template final usa `[mp4-best].mp4` / `[mp3-best].mp3` / `[mp4-144].mp4`.
 - Playlists, lives e empacotamento standalone estão fora do escopo desta V1.
 - Nenhuma pendência funcional conhecida nos fluxos efetivamente testados.
 
-## Git e publicação
+### Git e publicação da V1
 
 - Git original preservado, branch `master`.
 - Commits validados publicados: recuperação `255ce01`, implementação/testes
@@ -151,4 +276,5 @@ o template final usa `[mp4-best].mp4` / `[mp3-best].mp3` / `[mp4-144].mp4`.
 - `origin`: `https://github.com/Lavylck/Media-Downloader.git`.
 - `git push -u origin master` concluído; branch local acompanha `origin/master`.
 - Registro da publicação em commit adicional somente de documentação.
-- Nenhum desenvolvimento de V2 iniciado.
+- Naquela publicação a V2 ainda não havia sido iniciada. A evolução local atual
+  está registrada no início deste documento.

@@ -1,10 +1,16 @@
-# Media Downloader V1
+# Media Downloader — Neon V2
 
 Aplicativo desktop Windows para analisar mídias suportadas pelo yt-dlp e baixar
 **MP4** ou extrair **MP3**, com interface PySide6 em português.
 
+Esta evolução está na branch local **`feature/v2`**. A V1 validada manualmente
+permanece em `master`. As alterações V2 não foram publicadas no GitHub.
+
 ## Recursos
 
+- Interface escura roxo neon, CTA grande centralizado e tema QSS local.
+- Cole uma URL ou pare de digitar: análise automática após **600 ms**.
+  **Analisar** e Enter continuam disponíveis para antecipar ou forçar atualização.
 - Análise, transferência e processamento em segundo plano.
 - Título, duração quando informada pela fonte e qualidades realmente disponíveis.
 - Melhor qualidade selecionada automaticamente; seleção de resolução/bitrate
@@ -14,6 +20,11 @@ Aplicativo desktop Windows para analisar mídias suportadas pelo yt-dlp e baixar
 - Pasta de destino, progresso, erros, cancelamento e fechamento seguro.
 - Nomes compatíveis com Windows; arquivo existente de mesma mídia/seleção
   preservado. Uma operação por janela; não há fila.
+- Trocar o link durante análise invalida o resultado anterior, solicita
+  cancelamento e analisa apenas o link mais recente após a limpeza da tarefa.
+- Mesmo link, inclusive com espaços externos diferentes, não é reanalisado
+  automaticamente. Depois de erro/cancelamento, use Analisar para tentar de novo.
+- Botão Baixar só fica disponível com análise atual, qualidade e pasta informada.
 
 Conversões não aumentam a qualidade original. O bitrate exibido para MP3 é o
 da **fonte**, não uma promessa de bitrate final.
@@ -53,10 +64,14 @@ EJS 0.8.0, FFmpeg/FFprobe 9.0.2 e Node 26.13.1.
 .\.venv\Scripts\python.exe -m media_downloader.main
 ```
 
-1. Cole a URL HTTP/HTTPS de uma mídia individual e clique **Analisar**.
+1. Cole a URL HTTP/HTTPS de uma mídia individual e aguarde a análise automática.
 2. Confira as informações; escolha MP4 ou MP3 e a qualidade da fonte.
 3. Escolha a pasta e clique **Baixar**.
 4. A conclusão exibe o caminho real do arquivo final.
+
+Você pode substituir o link durante a análise. Durante o download, a edição de
+URL/qualidade é bloqueada para preservar a operação. Cancelar também remove
+análises agendadas; fechar antes do debounce não deixa trabalho oculto.
 
 Durante download de faixas separadas o percentual é por transferência e pode
 reiniciar ao trocar de faixa. Durante análise, tamanho desconhecido e conversão,
@@ -73,6 +88,9 @@ A suíte cobre imports, URLs inválidas, falhas, atraso de rede, timers Qt,
 progresso, exclusão de operações simultâneas, limpeza/cancelamento, HTTP local
 real, combinação DASH, conversão de codecs incompatíveis, MP3, duplicatas,
 nomes Windows e arquivos conferidos com FFprobe.
+Os casos V2 incluem Ctrl+V real, digitação com debounce, respostas obsoletas,
+troca/cancelamento do link, ausência de reanálises redundantes, CTA e layout
+em janela pequena. Resultados detalhados e tempos estão em `PROGRESS.md`.
 
 Para executar com janelas nativas:
 
@@ -89,7 +107,10 @@ Validação externa opcional (baixa amostra pública e salva em `test-artifacts/
 .\.venv\Scripts\python.exe -m media_downloader.tests.public_smoke --url 'https://www.youtube.com/watch?v=jNQXAC9IVRw' --video-height 144
 ```
 
-## Limites da V1
+O smoke usa colagem automática por padrão; `--manual` testa o botão.
+`--screenshot test-artifacts/tela.png` salva a janela após a análise.
+
+## Limites atuais
 
 - URLs individuais, sem playlists, transmissões ao vivo ou DRM.
 - Disponibilidade, restrições de acesso, geolocalização e alterações dos sites
@@ -103,19 +124,32 @@ Validação externa opcional (baixa amostra pública e salva em `test-artifacts/
   Não há deduplicação global entre janelas nem verificação de conteúdo de um
   arquivo já existente não vazio. Evite duas instâncias na mesma pasta.
 - Sem instalador/executável standalone; execução pelo ambiente Python.
+- O download revalida metadados na fonte para evitar reutilizar URLs de mídia
+  expiradas. Não há cache persistente de links assinados.
+- O debounce evita disparos a cada tecla; uma pausa longa em um prefixo que já
+  seja uma URL válida pode iniciar análise. Continue digitando para substituí-la.
 
 ### Validação visual curta
 
-Inicie normalmente, analise uma URL acessível, mova/redimensione a janela
-durante a análise, use **Escolher…**, baixe MP4 e MP3 e reproduza os arquivos.
-Experimente cancelar e fechar durante uma operação. A automação verifica
-widgets/eventos/arquivos, mas não substitui a avaliação visual e auditiva humana.
+1. Inicie normalmente e cole um link: a barra/CTA devem indicar análise sem clique.
+2. Mova/redimensione a janela; troque o link durante análise e confira que só o
+   último resultado aparece. Cole o mesmo link pronto: não deve reanalisar.
+3. Use Analisar/Enter para atualizar. Limpe a pasta: Baixar deve desabilitar.
+4. Escolha pasta, qualidade e baixe MP4/MP3; confira hover/foco e mensagem final.
+5. Experimente Cancelar e fechar durante uma tarefa; reproduza os arquivos.
+
+Em telas pequenas há scroll vertical. A V1 já recebeu aceite manual do usuário;
+o visual V2 ainda requer sua avaliação. A automação verifica eventos e arquivos,
+sem substituir percepção visual/auditiva humana.
 
 ## Continuidade e GitHub
 
 `AUDIT.md`: diagnóstico inicial e recuperação.
 `PROGRESS.md`: evidências e estado real.
-`AGENTS.md`: arquitetura e regras para futuras alterações.
+`AGENTS.md`: regras específicas deste aplicativo.
+`LESSONS_LEARNED.md`: incidentes reais, causas/evidências e prevenção.
+`GLOBAL_AGENT_TEMPLATE.md`: instruções gerais adaptáveis para Qwen, Gemma e outros.
+`PROJECT_BOOTSTRAP_CHECKLIST.md`: roteiro reutilizável de início, retomada e entrega.
 
-O Git local foi preservado. A publicação deve ser **privada** e exige autorização
-do proprietário antes de criar repositório remoto ou executar push.
+O remoto privado existente é `Lavylck/Media-Downloader`. A etapa atual tem
+apenas commits locais em `feature/v2`; push/merge exigem nova autorização.
