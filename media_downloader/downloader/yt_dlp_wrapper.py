@@ -1,79 +1,230 @@
+"""Synchronous media operations. Call from a worker, never from a GUI slot."""
+
+from pathlib import Path
+import shutil
+from urllib.parse import urlsplit
+
 import yt_dlp
-import os
-import subprocess
-from typing import List, Dict, Any
+from yt_dlp.postprocessor import PostProcessor
+from yt_dlp.postprocessor.ffmpeg import FFmpegVideoConvertorPP, FFmpegVideoRemuxerPP
+from yt_dlp.utils import PostProcessingError
+
+
+class OperationCancelled(Exception):
+    """Cooperative cancellation at the next safe network/processing boundary."""
+
+
+def check_cancelled(event):
+    if event is not None and event.is_set():
+        raise OperationCancelled("Operação cancelada.")
+
+
+def validate_url(url):
+    try:
+        parts = urlsplit(url)
+        valid = (parts.scheme in ("http", "https") and parts.hostname
+                 and not any(c.isspace() for c in url) and parts.port != 0)
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError("Informe uma URL HTTP ou HTTPS válida.")
+    return url
+
+
+class _Logger:
+    def __init__(self, cancel_event, status):
+        self.cancel_event = cancel_event
+        self.status = status
+
+    def debug(self, message):
+        check_cancelled(self.cancel_event)
+
+    info = debug
+
+    def warning(self, message):
+        check_cancelled(self.cancel_event)
+        if self.status:
+            self.status(f"Aviso: {message}")
+
+    def error(self, message):
+        check_cancelled(self.cancel_event)
+
+
+class _EnsureMP4(PostProcessor):
+    """Prefer lossless remux; transcode only if the source codecs require it."""
+
+    def run(self, info):
+        try:
+            return FFmpegVideoRemuxerPP(self._downloader, preferedformat="mp4").run(info)
+        except PostProcessingError:
+            self.to_screen("Remux indisponível; convertendo para MP4 (sem aumentar qualidade).")
+            return FFmpegVideoConvertorPP(self._downloader, preferedformat="mp4").run(info)
+
+
+class _FinalPath(PostProcessor):
+    def __init__(self, downloader, paths):
+        super().__init__(downloader)
+        self.paths = paths
+
+    def run(self, info):
+        self.paths.append(info["filepath"])
+        return [], info
+
 
 class YtDlpWrapper:
-    def __init__(self):
-        self.ydl_opts = {
+    def _options(self, cancel_event=None, status_hook=None):
+        runtimes = {}
+        for name in ("deno", "node"):
+            executable = shutil.which(name)
+            if executable:
+                runtimes[name] = {"path": executable}
+        opts = {
             "quiet": True,
-            "skip_download": True,
-            "no_warnings": True,
-            "cache_filename": "yt_dlp_cache.txt",
+            "noprogress": True,
+            "noplaylist": True,
+            "extract_flat": "in_playlist",
+            "ignoreerrors": False,
+            "socket_timeout": 15,
+            "retries": 2,
+            "fragment_retries": 2,
+            "extractor_retries": 2,
+            "skip_unavailable_fragments": False,
+            "windowsfilenames": True,
+            "overwrites": False,
+            "continuedl": True,
+            "cachedir": False,
+            "js_runtimes": runtimes,
+            "logger": _Logger(cancel_event, status_hook),
         }
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            opts["ffmpeg_location"] = str(Path(ffmpeg).parent)
+        return opts
 
-    def extract_info(self, url: str) -> Dict[str, Any]:
-        """Extract video information using yt-dlp."""
-        with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+    @staticmethod
+    def _single_media(info):
+        if not info:
+            raise ValueError("A fonte não retornou informações da mídia.")
+        if info.get("_type") in ("playlist", "multi_video") or "entries" in info:
+            raise ValueError("Use a URL de uma mídia individual; playlists não fazem parte da V1.")
+        if info.get("is_live"):
+            raise ValueError("Transmissões ao vivo não fazem parte da V1.")
+        if info.get("has_drm"):
+            raise ValueError("Mídia protegida por DRM não é suportada.")
         return info
 
-    def select_best_format(self, info: Dict[str, Any], format_type: str) -> Dict[str, Any]:
-        """Select the best format based on type.
-        format_type: 'video' or 'audio' or 'best'
-        """
-        formats = info.get("formats", [])
+    def extract_info(self, url, *, cancel_event=None, status_hook=None):
+        validate_url(url)
+        check_cancelled(cancel_event)
+        with yt_dlp.YoutubeDL(self._options(cancel_event, status_hook)) as ydl:
+            info = ydl.extract_info(url, download=False)
+        check_cancelled(cancel_event)
+        return self._single_media(info)
+
+    @staticmethod
+    def formats(info, kind):
+        formats = info.get("formats") or [info]
+        codec = "vcodec" if kind == "video" else "acodec"
+        return [f for f in formats if f.get("format_id") is not None
+                and not f.get("has_drm") and f.get(codec) != "none"]
+
+    def select_best_format(self, info, format_type="best"):
+        kind = "audio" if format_type == "audio" else "video"
+        formats = self.formats(info, kind)
         if not formats:
             return {}
-        if format_type == "video":
-            # filter video formats
-            video_formats = [f for f in formats if f.get("vcodec", "none") != "none" and f.get("acodec", "none") == "none"]
-            if not video_formats:
-                return {}
-            # sort by resolution and filesize
-            video_formats.sort(key=lambda f: (f.get("height", 0), f.get("filesize", 0)), reverse=True)
-            return video_formats[0]
-        elif format_type == "audio":
-            audio_formats = [f for f in formats if f.get("acodec", "none") != "none" and f.get("vcodec", "none") == "none"]
-            if not audio_formats:
-                return {}
-            audio_formats.sort(key=lambda f: (f.get("abr", 0), f.get("filesize", 0)), reverse=True)
-            return audio_formats[0]
-        else:
-            # best: choose format with highest quality and minimal conversion
-            best = None
-            best_score = -1
-            for f in formats:
-                score = 0
-                if f.get("vcodec", "none") != "none":
-                    score += (f.get("height", 0) or 0) * 2
-                if f.get("acodec", "none") != "none":
-                    score += f.get("abr", 0) or 0
-                if score > best_score:
-                    best_score = score
-                    best = f
-            return best if best else {}
+        keys = ("abr", "asr", "audio_channels", "tbr") if kind == "audio" else ("height", "fps", "tbr")
+        # yt-dlp sorts worst to best; preserve its ordering for equal/unknown fields.
+        return max(enumerate(formats),
+                   key=lambda item: (*(item[1].get(k) or 0 for k in keys), item[0]))[1]
 
-    def download(self, url: str, format_id: str, outtmpl: str, postprocessors: List[Dict[str, Any]] = None, progress_hook=None) -> str:
-        """Download the video or audio using yt-dlp."""
-        # Prevent duplicate downloads
-        if os.path.exists(outtmpl):
-            return outtmpl
-        
-        opts = {
+    def quality_choices(self, info, container):
+        kind = "video" if container == "MP4" else "audio"
+        formats = self.formats(info, kind)
+        if not formats:
+            return []
+        choices = [("Melhor disponível (automático)", None)]
+        if kind == "video":
+            heights = sorted({f["height"] for f in formats if f.get("height")}, reverse=True)
+            choices.extend((f"{height:g}p", height) for height in heights)
+        else:
+            rates = sorted({f["abr"] for f in formats if f.get("abr")}, reverse=True)
+            choices.extend((f"Fonte: {rate:g} kb/s", rate) for rate in rates)
+        return choices
+
+    def download_selection(self, info, container, quality=None):
+        kind = "video" if container == "MP4" else "audio"
+        formats = self.formats(info, kind)
+        field = "height" if kind == "video" else "abr"
+        if quality is not None:
+            formats = [f for f in formats if f.get(field) == quality]
+        best = self.select_best_format({"formats": formats}, kind) if formats else {}
+        if not best:
+            raise ValueError("Não há um formato compatível com esta seleção.")
+        format_id = str(best["format_id"])
+        if container == "MP3":
+            return format_id, [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3",
+                                "preferredquality": "0"}]
+        if best.get("acodec") == "none":
+            audio = [f for f in self.formats(info, "audio") if f.get("vcodec") == "none"]
+            if audio:
+                audio_best = self.select_best_format({"formats": audio}, "audio")
+                format_id += "+" + str(audio_best["format_id"])
+        return format_id, []
+
+    @staticmethod
+    def output_template(destination, container, quality=None):
+        # Escape literal percent signs in directory names from yt-dlp templating.
+        directory = str(Path(destination).resolve()).replace("%", "%%")
+        label = "best" if quality is None else f"{quality:g}"
+        return str(Path(directory) / f"%(title).100s [%(id).40s] [{container.lower()}-{label}].%(ext)s")
+
+    def download(self, url, format_id, outtmpl, postprocessors=None, progress_hook=None,
+                 *, cancel_event=None, status_hook=None):
+        validate_url(url)
+        check_cancelled(cancel_event)
+        if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+            raise RuntimeError("FFmpeg e FFprobe precisam estar no PATH. Consulte o README.")
+        audio = any(p.get("key") == "FFmpegExtractAudio" for p in postprocessors or [])
+        target_ext = ".mp3" if audio else ".mp4"
+        paths = []
+
+        def progress(data):
+            check_cancelled(cancel_event)
+            if progress_hook:
+                progress_hook(data)
+
+        def postprocess(data):
+            check_cancelled(cancel_event)
+            if status_hook and data.get("status") == "started":
+                status_hook("Processando mídia com FFmpeg…")
+
+        opts = self._options(cancel_event, status_hook)
+        opts.update({
             "format": format_id,
             "outtmpl": outtmpl,
-            "quiet": True,
-            "no_warnings": True,
-            "ignoreerrors": True,
-        }
-        if postprocessors:
-            opts["postprocessors"] = postprocessors
-        if progress_hook:
-            opts["progress_hooks"] = [progress_hook]
-        
+            "merge_output_format": "mkv",
+            "postprocessors": postprocessors or [],
+            "progress_hooks": [progress],
+            "postprocessor_hooks": [postprocess],
+        })
         with yt_dlp.YoutubeDL(opts) as ydl:
-            # yt_dlp.YoutubeDL.download returns a list of info dicts
-            # we catch errors here if needed.
-            ydl.download([url])
-        return outtmpl
+            if not audio:
+                ydl.add_post_processor(_EnsureMP4(ydl))
+            ydl.add_post_processor(_FinalPath(ydl, paths), when="after_move")
+            info = self._single_media(ydl.extract_info(url, download=False))
+            check_cancelled(cancel_event)
+            target = Path(ydl.prepare_filename(info)).with_suffix(target_ext)
+            if target.is_file() and target.stat().st_size > 0:
+                if status_hook:
+                    status_hook("Arquivo já existente; preservado.")
+                return str(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            ydl.process_ie_result(info, download=True)
+        check_cancelled(cancel_event)
+        if not paths:
+            raise RuntimeError("O download terminou sem informar um arquivo final.")
+        result = Path(paths[-1])
+        if result.suffix.lower() != target_ext or not result.is_file() or result.stat().st_size == 0:
+            raise RuntimeError("O arquivo final esperado não foi produzido.")
+        return str(result.resolve())

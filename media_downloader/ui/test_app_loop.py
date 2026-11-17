@@ -1,9 +1,4 @@
-import sys
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QCoreApplication
-
-app = QApplication(sys.argv)
-print("App started")
-QCoreApplication.processEvents()
-print("Events processed")
-sys.exit(0)
+"""Legacy entry point; imports no longer create a QApplication or exit."""
+if __name__ == "__main__":
+    import unittest
+    unittest.main(module="media_downloader.tests.test_ui")
