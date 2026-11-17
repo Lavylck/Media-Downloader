@@ -23,6 +23,10 @@ class Recorder(QObject):
         if message.startswith("Aviso:"):
             self.messages.append(message)
 
+    @Slot(int, str)
+    def analysis_status(self, request_id, message):
+        self.status(message)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -47,7 +51,7 @@ def main():
         win.url_edit.setText(args.url)
         win.dest_edit.setText(str(Path(args.output).resolve()))
         win.analyze_btn.click()
-        win.analysis_worker.status.connect(recorder.status)
+        win.analysis_worker.status.connect(recorder.analysis_status)
         wait_until(lambda: not win.busy, 120000)
         if not win.media_info:
             raise RuntimeError(win.status_label.text())

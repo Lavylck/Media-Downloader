@@ -11,12 +11,12 @@ class TestWorkers(unittest.TestCase):
     def test_analysis_exception_emits_error_then_finished_once(self):
         wrapper = Mock()
         wrapper.extract_info.side_effect = RuntimeError("network error")
-        worker = AnalysisWorker(wrapper, "https://example.com")
+        worker = AnalysisWorker(wrapper, "https://example.com", request_id=42)
         events = []
-        worker.error.connect(lambda error: events.append(("error", error)))
+        worker.error.connect(lambda request_id, error: events.append(("error", request_id, error)))
         worker.finished.connect(lambda ok: events.append(("finished", ok)))
         worker.run()
-        self.assertEqual(events, [("error", "network error"), ("finished", False)])
+        self.assertEqual(events, [("error", 42, "network error"), ("finished", False)])
 
     def test_download_exception_emits_no_success(self):
         wrapper = Mock()

@@ -83,8 +83,8 @@ class Observer(QObject):
         self.slot_threads = []
         self.progress_values = []
 
-    @Slot(dict)
-    def record_info(self, info):
+    @Slot(int, dict)
+    def record_info(self, request_id, info):
         self.slot_threads.append(QThread.currentThread())
 
     @Slot(int)

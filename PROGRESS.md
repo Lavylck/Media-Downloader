@@ -1,4 +1,21 @@
-# Estado da V1 — 2026-11-17
+# Estado do projeto — evolução V2 em desenvolvimento
+
+## Checkpoint desta etapa
+
+- Usuário confirmou manualmente: app abre, analisa, baixa e a V1 é utilizável.
+- V1 preservada em `master`, commit `948ef054d82bdc87ba1327205ea24464d6c27a1f`,
+  sincronizada com `origin/master` no início desta etapa.
+- Trabalho exclusivamente na branch local `feature/v2`; publicação não autorizada.
+- Baseline novamente executada: **36 testes aprovados, zero skips, em 8,751 s**.
+- Escopo: análise automática com debounce/invalidação, CTA principal, tema roxo
+  neon, fluidez e documentação reutilizável para agentes locais.
+- Análise automática implementada: debounce de 600 ms, requisições identificadas,
+  substituição segura do link, cancelamento e supressão de repetições.
+- Primeira validação V2: **46 testes aprovados em 14,203 s**, incluindo os 36
+  testes de regressão e 10 novos casos de digitação, colagem e concorrência.
+- Tema, CTA e documentação reutilizável: em andamento.
+
+## Histórico da entrega V1 — 2026-11-17
 
 **V1 funcional e validada neste ambiente Windows, publicada em repositório
 privado.** Análise, MP4, MP3, seleção de qualidade, progresso, erros e encerramento

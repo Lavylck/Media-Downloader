@@ -12,7 +12,7 @@ from .download_worker import DownloadWorker
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, ydl_wrapper=None):
+    def __init__(self, ydl_wrapper=None, *, analysis_debounce_ms=600):
         super().__init__()
         self.setWindowTitle("Media Downloader V1")
         self.resize(720, 440)
@@ -28,6 +28,18 @@ class MainWindow(QMainWindow):
         self.last_output = None
         self._closing = False
         self._cancelling = False
+        self._input_url = ""
+        self._url_revision = 0
+        self._analysis_revision = None
+        self._request_serial = 0
+        self._active_request_id = None
+        self._attempted_revision = None
+        self._auto_pending = False
+        self._cancel_requested = False
+        self.analysis_timer = QTimer(self)
+        self.analysis_timer.setSingleShot(True)
+        self.analysis_timer.setInterval(analysis_debounce_ms)
+        self.analysis_timer.timeout.connect(self._auto_analyze)
         self.init_ui()
         self._update_controls()
 
@@ -38,7 +50,7 @@ class MainWindow(QMainWindow):
         url_layout = QHBoxLayout()
         self.url_edit = QLineEdit()
         self.url_edit.setPlaceholderText("URL da mídia (HTTP ou HTTPS)")
-        self.url_edit.textChanged.connect(self._invalidate_analysis)
+        self.url_edit.textChanged.connect(self._on_url_changed)
         self.url_edit.returnPressed.connect(self.analyze_url)
         self.analyze_btn = QPushButton("Analisar")
         self.analyze_btn.clicked.connect(self.analyze_url)
@@ -65,6 +77,7 @@ class MainWindow(QMainWindow):
         dest_layout = QHBoxLayout()
         self.dest_edit = QLineEdit(str(Path.home() / "Downloads"))
         self.dest_edit.setPlaceholderText("Pasta de destino")
+        self.dest_edit.textChanged.connect(self._update_controls)
         self.dest_btn = QPushButton("Escolher…")
         self.dest_btn.clicked.connect(self.choose_dest)
         dest_layout.addWidget(self.dest_edit)
@@ -96,12 +109,17 @@ class MainWindow(QMainWindow):
     def _update_controls(self):
         idle = not self.busy and not self._closing
         self.analyze_btn.setEnabled(idle)
-        for widget in (self.url_edit, self.format_combo, self.dest_edit, self.dest_btn):
-            widget.setEnabled(idle)
+        self.format_combo.setEnabled(idle)
+        for widget in (self.url_edit, self.dest_edit, self.dest_btn):
+            widget.setEnabled(not self.download_in_progress and not self._closing)
         self.quality_combo.setEnabled(idle and self.quality_combo.count() > 0)
         self.download_btn.setEnabled(idle and self.media_info is not None
+                                     and self.analyzed_url == self.url_edit.text().strip()
+                                     and bool(self.dest_edit.text().strip())
                                      and self.quality_combo.count() > 0)
-        self.cancel_btn.setEnabled(self.busy and not self._cancelling and not self._closing)
+        self.cancel_btn.setEnabled(not self._closing and (
+            (self.busy and not self._cancelling) or self.analysis_timer.isActive()
+            or self._auto_pending))
 
     @Slot()
     def _invalidate_analysis(self):
@@ -111,6 +129,52 @@ class MainWindow(QMainWindow):
         self.duration_label.setText("Duração: —")
         self.quality_combo.clear()
         self._update_controls()
+
+    @Slot(str)
+    def _on_url_changed(self, text):
+        url = text.strip()
+        if url == self._input_url or self._closing:
+            return
+        self._input_url = url
+        self._url_revision += 1
+        self._cancel_requested = False
+        self.analysis_timer.stop()
+        self._auto_pending = False
+        self.last_output = None
+        self._invalidate_analysis()
+        if self.analysis_worker is not None:
+            self._cancelling = True
+            self.analysis_worker.cancel()
+        if not self.download_in_progress:
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+        try:
+            validate_url(url)
+        except ValueError:
+            self.status_label.setText("Cole um link HTTP ou HTTPS completo.")
+        else:
+            self.status_label.setText("Link detectado. A análise começará automaticamente…")
+            self.analysis_timer.start()
+        self._update_controls()
+
+    @Slot()
+    def _auto_analyze(self):
+        if self._closing or self._attempted_revision == self._url_revision:
+            return
+        self._auto_pending = True
+        self._run_pending_analysis()
+
+    @Slot()
+    def _run_pending_analysis(self):
+        if self._closing or not self._auto_pending:
+            return
+        if self.busy:
+            self.status_label.setText("Novo link pronto. Aguardando a análise anterior encerrar…")
+            self._update_controls()
+            return
+        self._auto_pending = False
+        if self._attempted_revision != self._url_revision:
+            self.analyze_url()
 
     @Slot()
     def _update_qualities(self):
@@ -128,9 +192,14 @@ class MainWindow(QMainWindow):
         setattr(self, f"{kind}_in_progress", True)
         self._cancelling = False
         worker.moveToThread(thread)
-        worker.status.connect(self._on_status, Qt.ConnectionType.QueuedConnection)
-        worker.error.connect(self._on_error, Qt.ConnectionType.QueuedConnection)
-        worker.cancelled.connect(self._on_cancelled, Qt.ConnectionType.QueuedConnection)
+        if kind == "analysis":
+            worker.status.connect(self._on_analysis_status, Qt.ConnectionType.QueuedConnection)
+            worker.error.connect(self._on_analysis_error, Qt.ConnectionType.QueuedConnection)
+            worker.cancelled.connect(self._on_analysis_cancelled, Qt.ConnectionType.QueuedConnection)
+        else:
+            worker.status.connect(self._on_status, Qt.ConnectionType.QueuedConnection)
+            worker.error.connect(self._on_error, Qt.ConnectionType.QueuedConnection)
+            worker.cancelled.connect(self._on_cancelled, Qt.ConnectionType.QueuedConnection)
         # The GUI event loop remains alive during close/cancel. Queue quit to
         # the QThread owner and delete the worker at the thread's finish boundary.
         worker.finished.connect(thread.quit)
@@ -147,6 +216,9 @@ class MainWindow(QMainWindow):
     def analyze_url(self):
         if self.busy or self._closing:
             return
+        self.analysis_timer.stop()
+        self._auto_pending = False
+        self._attempted_revision = self._url_revision
         url = self.url_edit.text().strip()
         self._invalidate_analysis()
         try:
@@ -155,16 +227,39 @@ class MainWindow(QMainWindow):
             self._on_error(str(exc))
             return
         self.analyzed_url = url
+        self._analysis_revision = self._url_revision
+        self._request_serial += 1
+        self._active_request_id = self._request_serial
         self.last_output = None
         self.progress.setRange(0, 0)
         self.status_label.setText("Analisando URL…")
-        worker = AnalysisWorker(self.ydl, url)
+        worker = AnalysisWorker(self.ydl, url, self._active_request_id)
         worker.info_received.connect(self._on_analysis_info, Qt.ConnectionType.QueuedConnection)
         self._start_worker("analysis", worker)
 
-    @Slot(dict)
-    def _on_analysis_info(self, info):
-        if self._closing or self._cancelling:
+    def _current_analysis(self, request_id):
+        return (request_id == self._active_request_id
+                and self._url_revision == self._analysis_revision
+                and not self._closing)
+
+    @Slot(int, str)
+    def _on_analysis_status(self, request_id, message):
+        if self._current_analysis(request_id):
+            self._on_status(message)
+
+    @Slot(int, str)
+    def _on_analysis_error(self, request_id, message):
+        if self._current_analysis(request_id):
+            self._on_error(message)
+
+    @Slot(int)
+    def _on_analysis_cancelled(self, request_id):
+        if self._current_analysis(request_id):
+            self._on_cancelled()
+
+    @Slot(int, dict)
+    def _on_analysis_info(self, request_id, info):
+        if not self._current_analysis(request_id) or self._cancelling:
             return
         self.media_info = info
         self.title_label.setText(f"Título: {info.get('title') or 'Não informado'}")
@@ -259,6 +354,11 @@ class MainWindow(QMainWindow):
         setattr(self, f"{kind}_worker", None)
         setattr(self, f"{kind}_thread", None)
         setattr(self, f"{kind}_in_progress", False)
+        if kind == "analysis":
+            self._active_request_id = None
+        if self._cancel_requested:
+            self._on_cancelled()
+        self._cancel_requested = False
         self._cancelling = False
         if self.progress.maximum() == 0:
             self.progress.setRange(0, 100)
@@ -266,6 +366,8 @@ class MainWindow(QMainWindow):
         self._update_controls()
         if self._closing and not self.busy:
             QTimer.singleShot(0, self.close)
+        elif self._auto_pending:
+            QTimer.singleShot(0, self._run_pending_analysis)
 
     @Slot()
     def _analysis_stopped(self):
@@ -277,16 +379,27 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def cancel_operation(self):
+        self.analysis_timer.stop()
+        self._auto_pending = False
+        self._attempted_revision = self._url_revision
+        self._cancel_requested = True
         self._cancelling = True
+        if self.analysis_in_progress:
+            self._invalidate_analysis()
         for worker in (self.analysis_worker, self.download_worker):
             if worker is not None:
                 worker.cancel()
-        self.status_label.setText("Cancelando… aguardando a etapa de rede/FFmpeg terminar.")
+        self.status_label.setText("Cancelando… aguardando a etapa de rede/FFmpeg terminar."
+                                  if self.busy else "Análise automática cancelada. Use Analisar para tentar novamente.")
+        if not self.busy:
+            self._cancelling = False
         self._update_controls()
 
     def closeEvent(self, event):
+        self._closing = True
+        self.analysis_timer.stop()
+        self._auto_pending = False
         if self.busy:
-            self._closing = True
             self.cancel_operation()
             self.status_label.setText("Encerrando com segurança… aguardando rede/FFmpeg.")
             event.ignore()
