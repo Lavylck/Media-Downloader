@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import time
 
-from PySide6.QtCore import QObject, QTimer, Slot, Qt
+from PySide6.QtCore import QObject, QTimer, Slot, Qt, QCoreApplication, QEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -124,6 +124,9 @@ def main():
             wait_until(lambda: not win.busy, 60000)
         timer.stop()
         win.close()
+        wait_until(lambda: win.history.is_closed, 10000)
+        win.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     report["qt_timer_ticks"] = len(ticks)
     report["analysis_mode"] = "manual" if args.manual else "automatic paste"
     report["analysis_requests"] = win.analysis_requests

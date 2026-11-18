@@ -12,12 +12,13 @@ class AnalysisWorker(QObject):
     status = Signal(int, str)
     cancelled = Signal(int)
 
-    def __init__(self, ydl_wrapper, url, request_id=0):
+    def __init__(self, ydl_wrapper, url, request_id=0, *, mode="single", offset=0):
         super().__init__()
         self.ydl_wrapper = ydl_wrapper
         self.url = url
         self.request_id = request_id
         self.cancel_event = Event()
+        self.mode, self.offset = mode, offset
 
     def cancel(self):
         # Called by the GUI: Event.set is thread-safe, unlike a queued slot
@@ -32,8 +33,12 @@ class AnalysisWorker(QObject):
         success = False
         try:
             self._status("Analisando URL…")
-            info = self.ydl_wrapper.extract_info(
-                self.url, cancel_event=self.cancel_event, status_hook=self._status)
+            if self.mode == "playlist":
+                info = self.ydl_wrapper.playlist_page(
+                    self.url, self.offset, cancel_event=self.cancel_event, status_hook=self._status)
+            else:
+                info = self.ydl_wrapper.extract_info(
+                    self.url, cancel_event=self.cancel_event, status_hook=self._status)
             check_cancelled(self.cancel_event)
             self.info_received.emit(self.request_id, info)
             success = True

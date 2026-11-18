@@ -5,9 +5,15 @@ QMainWindow, QScrollArea, QWidget#appSurface {
 QWidget {
     color: #f3efff;
     font-family: "Segoe UI";
-    font-size: 13px;
+    font-size: 15px;
 }
 QScrollArea { border: none; }
+QTabWidget::pane { border: 1px solid #342644; background: #0d0b14; }
+QTabBar::tab { background: #1c1228; color: #c5b4d8; padding: 12px 24px; border-bottom: 2px solid #342644; }
+QTabBar::tab:selected { background: #321c48; color: #f2ddff; border-bottom-color: #c58aff; }
+QListWidget, QTableWidget { background: #100b18; border: 1px solid #49315e; color: #eee3fc; }
+QHeaderView::section { background: #2b193d; color: #dcbcff; padding: 7px; border: none; }
+QPushButton#addButton { color: #e8cbff; font-size: 24px; padding: 4px 16px; border-color: #b878ee; }
 QLabel { background: transparent; border: none; }
 QLabel#brandMark {
     color: #dfc7ff;
@@ -17,28 +23,34 @@ QLabel#brandMark {
     font-size: 20px;
     font-weight: 700;
 }
-QLabel#brandTitle { font-size: 23px; font-weight: 700; color: #faf7ff; }
-QLabel#subtitle, QLabel#muted { color: #b8adc9; font-size: 12px; }
+QLabel#brandTitle { font-size: 25px; font-weight: 700; color: #faf7ff; }
+QLabel#subtitle, QLabel#muted { color: #c4b8d5; font-size: 14px; }
 QLabel#edition {
     color: #dbbdff; background: #23172f; border: 1px solid #654384;
-    border-radius: 8px; padding: 5px 10px; font-size: 11px;
+    border-radius: 8px; padding: 5px 10px; font-size: 12px;
     font-family: "Consolas";
 }
 QFrame#card {
     background: #16121f; border: 1px solid #342644; border-radius: 14px;
 }
+QFrame#previewPanel {
+    background: #120b1d; border: 1px solid #9255c1; border-radius: 12px;
+    padding: 12px;
+}
+QFrame#queueCard, QFrame#historyCard { background: #191023; border: 1px solid #51356d; border-radius: 10px; }
+QFrame#queueCard QPushButton, QFrame#historyCard QPushButton { font-size: 13px; padding: 6px 10px; }
 QLabel#sectionLabel {
-    color: #caa3ff; font-size: 11px; font-weight: 600;
+    color: #d7b5ff; font-size: 13px; font-weight: 600;
     font-family: "Consolas";
 }
-QLabel#mediaTitle { color: #f7f1ff; font-size: 17px; font-weight: 600; }
-QLabel#fieldLabel { color: #c7bdd8; font-size: 12px; }
+QLabel#mediaTitle { color: #f7f1ff; font-size: 19px; font-weight: 600; }
+QLabel#fieldLabel { color: #d5cbe5; font-size: 14px; }
 QLineEdit, QComboBox {
     background: #0f0d17; color: #f3efff; border: 2px solid #3b2c4e;
     border-radius: 9px; padding: 9px 12px;
     selection-background-color: #7040a9; selection-color: #ffffff;
 }
-QLineEdit#urlInput { background: #120d1d; border-color: #63418a; font-size: 14px; }
+QLineEdit#urlInput { background: #120d1d; border-color: #8755b9; font-size: 15px; }
 QLineEdit:hover, QComboBox:hover { border-color: #9462c9; }
 QLineEdit:focus, QComboBox:focus { border-color: #c68aff; background: #1b1129; }
 QLineEdit:disabled, QComboBox:disabled {
@@ -85,8 +97,8 @@ QPushButton#cancelButton:hover { background: #2c1c36; border-color: #74508e; col
 QPushButton#cancelButton:pressed { background: #402344; }
 QPushButton#cancelButton:focus { border-color: #c68aff; }
 QPushButton#cancelButton:disabled { color: #85798f; background: transparent; }
-QLabel#phase { color: #cba5fa; font-family: "Consolas"; font-size: 11px; }
-QLabel#progressCaption { color: #d9c4ef; font-family: "Consolas"; font-size: 11px; }
+QLabel#phase { color: #d9b7ff; font-family: "Consolas"; font-size: 13px; }
+QLabel#progressCaption { color: #e4cff9; font-family: "Consolas"; font-size: 13px; }
 QProgressBar {
     background: #241a31; border: 1px solid #3e2a50; border-radius: 5px;
     min-height: 9px; max-height: 9px;
@@ -97,7 +109,7 @@ QProgressBar::chunk {
 }
 QLabel#statusMessage {
     color: #c9bed9; background: #15111e; border: 1px solid #30243e;
-    border-radius: 9px; padding: 10px 12px; font-size: 12px;
+    border-radius: 9px; padding: 10px 12px; font-size: 14px;
 }
 QLabel#statusMessage[tone="error"] { color: #ffbacb; border-color: #80425e; background: #261421; }
 QLabel#statusMessage[tone="success"] { color: #b6f4e0; border-color: #376b62; background: #102522; }

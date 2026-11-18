@@ -175,7 +175,7 @@ class TestAutoAnalysis(TestUI):
         button = self.win.download_btn
         self.assertGreaterEqual(button.height(), 64)
         self.assertGreaterEqual(button.width(), 300)
-        content = self.win.centralWidget().widget()
+        content = self.win.form_widget
         center = button.mapTo(content, button.rect().center()).x()
         self.assertLess(abs(center - content.width() / 2), 4)
         self.assertFalse(button.isEnabled())
@@ -187,8 +187,8 @@ class TestAutoAnalysis(TestUI):
         self.assertFalse(button.property("busy"))
         self.assertTrue(button.isEnabled())
         self.win.start_download()
-        self.assertIn("Baixando", button.text())
-        self.assertFalse(self.win.url_edit.isEnabled())
+        self.assertIn("Adicionar", button.text())
+        self.assertTrue(self.win.url_edit.isEnabled())
         wait_until(self.settled)
         self.assertEqual(self.win.status_label.property("tone"), "success")
         self.assertEqual(self.win.progress_caption.text(), "100%")
@@ -198,13 +198,26 @@ class TestAutoAnalysis(TestUI):
         self.win.resize(620, 520)
         self.paste("https://example.com/long-title")
         wait_until(self.settled)
-        scroll = self.win.centralWidget()
+        scroll = self.win.scroll_area
         self.assertLessEqual(scroll.widget().width(), scroll.viewport().width())
         self.assertTrue(self.win.title_label.wordWrap())
         self.win._on_error("Falha de rede: tente novamente")
         self.assertEqual(self.win.status_label.property("tone"), "error")
         self.assertIn("Falha de rede", self.win.status_label.text())
         self.assertGreater(scroll.verticalScrollBar().maximum(), 0)
+
+    def test_new_link_can_be_analyzed_and_queued_during_download(self):
+        self.paste("https://example.com/first")
+        wait_until(self.settled)
+        self.win.start_download()
+        self.paste("https://example.com/second")
+        wait_until(lambda: self.win.media_info is not None and not self.win.analysis_in_progress)
+        self.assertTrue(self.win.queue.busy)
+        self.assertTrue(self.win.download_btn.isEnabled())
+        self.win.start_download()
+        self.assertEqual(len(self.win.queue.items), 2)
+        wait_until(self.settled)
+        self.assertTrue(all(item.state == "completed" for item in self.win.queue.items))
 
 
 def load_tests(loader, tests, pattern):

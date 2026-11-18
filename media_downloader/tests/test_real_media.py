@@ -3,6 +3,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -67,6 +68,15 @@ class TestRealMedia(unittest.TestCase):
         (cls.source / "index.html").write_text(
             '<html><head><title>Teste: nome &quot;inválido&quot; / Windows?</title></head>'
             '<body><video controls src="sample.mp4"></video></body></html>', encoding="utf-8")
+        (cls.source / "playlist.html").write_text(
+            '<html><head><title>Playlist local de validação</title></head><body>'
+            '<video src="sample.mp4?item=1"></video>'
+            '<video src="missing.mp4"></video>'
+            '<video src="sample.mp4?item=3"></video></body></html>', encoding="utf-8")
+        (cls.source / "large-playlist.html").write_text(
+            "<html><head><title>103 items</title></head><body>" +
+            "".join(f'<video src="sample.mp4?item={i}"></video>' for i in range(103)) +
+            "</body></html>", encoding="utf-8")
         cls.server = ThreadingHTTPServer(
             ("127.0.0.1", 0), partial(QuietHandler, directory=str(cls.source)))
         cls.server.daemon_threads = True
@@ -82,9 +92,17 @@ class TestRealMedia(unittest.TestCase):
         cls.temp.cleanup()
 
     def setUp(self):
+        self.previous_data = os.environ.get("MEDIA_DOWNLOADER_DATA_DIR")
+        os.environ["MEDIA_DOWNLOADER_DATA_DIR"] = str(self.root / self._testMethodName / "data")
         self.wrapper = YtDlpWrapper()
         self.dest = self.root / self._testMethodName
         self.dest.mkdir()
+
+    def tearDown(self):
+        if self.previous_data is None:
+            os.environ.pop("MEDIA_DOWNLOADER_DATA_DIR", None)
+        else:
+            os.environ["MEDIA_DOWNLOADER_DATA_DIR"] = self.previous_data
 
     def download(self, filename, container="MP4"):
         url = self.base_url + filename
@@ -186,5 +204,51 @@ class TestRealMedia(unittest.TestCase):
                 wait_until(lambda: not win.busy, 30000)
             timer.stop()
             win.close()
+            wait_until(lambda: win.history.is_closed)
             win.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    def test_real_playlist_selection_queue_failure_and_history(self):
+        from media_downloader.history import HistoryStore
+        from media_downloader.paths import data_dir
+        win = MainWindow()
+        win.show()
+        try:
+            win.dest_edit.setText(str(self.dest))
+            win.source_mode.setCurrentIndex(1)
+            win.url_edit.setText(self.base_url + "playlist.html")
+            win.analyze_url()
+            wait_until(lambda: not win.analysis_in_progress, 20000)
+            self.assertEqual(win.media_info.get("_type"), "playlist", win.status_label.text())
+            self.assertEqual(len(win.playlist_panel.loaded), 3)
+            self.assertFalse(win.download_btn.isEnabled())
+            win.playlist_panel.select_all()
+            win.start_download()
+            wait_until(lambda: not win.queue.busy, 40000)
+            states = [item.state for item in win.queue.items]
+            self.assertEqual(states, ["completed", "failed", "completed"])
+            for item in win.queue.items:
+                if item.state == "completed":
+                    self.assertEqual({s["codec_type"] for s in probe(item.path)["streams"]}, {"audio", "video"})
+            ids = {item.id for item in win.queue.items}
+        finally:
+            win.close()
+            wait_until(lambda: win.history.is_closed, 20000)
+            win.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        store = HistoryStore(data_dir() / "history.sqlite3")
+        records = store.query()["records"]
+        self.assertEqual(len([r for r in records if r["id"] in ids]), 3)
+        store.close()
+
+    def test_real_playlist_pagination_has_no_repeated_or_missing_items(self):
+        url = self.base_url + "large-playlist.html"
+        first = self.wrapper.playlist_page(url)
+        second = self.wrapper.playlist_page(url, offset=100)
+        self.assertEqual(len(first["entries"]), 100)
+        self.assertTrue(first["has_more"])
+        self.assertEqual(len(second["entries"]), 3)
+        self.assertFalse(second["has_more"])
+        entries = first["entries"] + second["entries"]
+        self.assertEqual(len({entry["url"] for entry in entries}), 103)
+        self.assertEqual([entry["index"] for entry in entries], list(range(1, 104)))

@@ -4,6 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import threading
 import time
 import unittest
+import tempfile
 
 from PySide6.QtCore import QCoreApplication, QEvent, QEventLoop, QObject, QThread, QTimer, Slot
 from PySide6.QtWidgets import QApplication
@@ -99,6 +100,9 @@ class TestUI(unittest.TestCase):
         cls.app.setQuitOnLastWindowClosed(False)
 
     def setUp(self):
+        self.previous_data = os.environ.get("MEDIA_DOWNLOADER_DATA_DIR")
+        self.test_data = tempfile.TemporaryDirectory(prefix="media-ui-")
+        os.environ["MEDIA_DOWNLOADER_DATA_DIR"] = self.test_data.name
         self.wrapper = DelayedWrapper()
         self.win = MainWindow(self.wrapper)
         self.observer = Observer()
@@ -119,8 +123,14 @@ class TestUI(unittest.TestCase):
             wait_until(lambda: not self.win.busy)
         self.timer.stop()
         self.win.close()
+        wait_until(lambda: self.win.history.is_closed)
         self.win.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        if self.previous_data is None:
+            os.environ.pop("MEDIA_DOWNLOADER_DATA_DIR", None)
+        else:
+            os.environ["MEDIA_DOWNLOADER_DATA_DIR"] = self.previous_data
+        self.test_data.cleanup()
 
     def analyze(self):
         self.win.analyze_url()
@@ -195,7 +205,8 @@ class TestUI(unittest.TestCase):
         self.assertFalse(self.win.analyze_btn.isEnabled())
         wait_until(lambda: not self.win.busy)
         self.assertEqual(self.wrapper.download_calls, 1)
-        self.assertEqual(self.wrapper.analysis_calls, 1)
+        # V3 intentionally permits analysis while the sequential queue downloads.
+        self.assertEqual(self.wrapper.analysis_calls, 2)
         self.assertGreaterEqual(self.ticks - before, 10)
         self.assertTrue(any(0 < n < 100 for n in self.observer.progress_values))
         self.assertEqual(self.win.progress.value(), 100)

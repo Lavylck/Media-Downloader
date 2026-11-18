@@ -1,8 +1,11 @@
 """Synchronous media operations. Call from a worker, never from a GUI slot."""
 
 from pathlib import Path
+import re
 import shutil
 from urllib.parse import urlsplit
+from itertools import islice
+from ..paths import tool_path
 
 import yt_dlp
 from yt_dlp.postprocessor import PostProcessor
@@ -23,6 +26,7 @@ def validate_url(url):
     try:
         parts = urlsplit(url)
         valid = (parts.scheme in ("http", "https") and parts.hostname
+                 and not parts.username and not parts.password
                  and not any(c.isspace() for c in url) and parts.port != 0)
     except ValueError:
         valid = False
@@ -72,10 +76,19 @@ class _FinalPath(PostProcessor):
 
 
 class YtDlpWrapper:
+    @staticmethod
+    def quality_label(fmt):
+        """Use extractor labels, never infer a YouTube class from aspect ratio."""
+        for key in ("quality_label", "format_note", "format"):
+            match = re.search(r"(?<!\w)(\d{2,4})p(?:\d{2,3})?(?!\w)", str(fmt.get(key) or ""))
+            if match:
+                return f"{match[1]}p"
+        return None
+
     def _options(self, cancel_event=None, status_hook=None):
         runtimes = {}
         for name in ("deno", "node"):
-            executable = shutil.which(name)
+            executable = tool_path(name)
             if executable:
                 runtimes[name] = {"path": executable}
         opts = {
@@ -83,6 +96,7 @@ class YtDlpWrapper:
             "noprogress": True,
             "noplaylist": True,
             "extract_flat": "in_playlist",
+            "lazy_playlist": True,
             "ignoreerrors": False,
             "socket_timeout": 15,
             "retries": 2,
@@ -96,7 +110,7 @@ class YtDlpWrapper:
             "js_runtimes": runtimes,
             "logger": _Logger(cancel_event, status_hook),
         }
-        ffmpeg = shutil.which("ffmpeg")
+        ffmpeg = tool_path("ffmpeg")
         if ffmpeg:
             opts["ffmpeg_location"] = str(Path(ffmpeg).parent)
         return opts
@@ -106,7 +120,7 @@ class YtDlpWrapper:
         if not info:
             raise ValueError("A fonte não retornou informações da mídia.")
         if info.get("_type") in ("playlist", "multi_video") or "entries" in info:
-            raise ValueError("Use a URL de uma mídia individual; playlists não são suportadas.")
+            raise ValueError("Use uma mídia individual ou selecione os itens no modo Playlist.")
         if info.get("is_live"):
             raise ValueError("Transmissões ao vivo não são suportadas nesta versão.")
         if info.get("has_drm"):
@@ -116,10 +130,52 @@ class YtDlpWrapper:
     def extract_info(self, url, *, cancel_event=None, status_hook=None):
         validate_url(url)
         check_cancelled(cancel_event)
-        with yt_dlp.YoutubeDL(self._options(cancel_event, status_hook)) as ydl:
+        opts = self._options(cancel_event, status_hook)
+        opts["playlist_items"] = "1:101"
+        with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
+            if info and (info.get("_type") in ("playlist", "multi_video") or "entries" in info):
+                return self._playlist_result(info, url, 0, 100, cancel_event)
         check_cancelled(cancel_event)
         return self._single_media(info)
+
+    @staticmethod
+    def _playlist_result(info, url, offset, limit, cancel_event):
+        entries = []
+        for entry in islice(info.get("entries") or [], limit + 1):
+            check_cancelled(cancel_event)
+            entry = entry or {}
+            # Generic playlist entries can inherit the parent's webpage_url;
+            # their own url identifies the actual item and must take precedence.
+            target = entry.get("url") or entry.get("webpage_url") or ""
+            if not target.startswith(("http://", "https://")) and entry.get("ie_key") == "Youtube":
+                target = "https://www.youtube.com/watch?v=" + str(entry.get("id") or target)
+            available = (target.startswith(("http://", "https://"))
+                         and entry.get("availability") not in ("private", "needs_auth", "premium_only", "subscriber_only"))
+            thumbnails = entry.get("thumbnails") or []
+            entries.append({
+                "url": target, "title": entry.get("title") or "Item indisponível",
+                "thumbnail": entry.get("thumbnail") or (thumbnails[-1].get("url") if thumbnails else ""),
+                "available": bool(available), "duration": entry.get("duration"),
+                "index": entry.get("playlist_index") or offset + len(entries) + 1,
+            })
+        return {"_type": "playlist", "title": info.get("title") or "Playlist",
+                "webpage_url": url, "entries": entries[:limit], "offset": offset,
+                "thumbnail": info.get("thumbnail") or next((e["thumbnail"] for e in entries if e["thumbnail"]), ""),
+                "playlist_count": info.get("playlist_count") or info.get("n_entries"),
+                "has_more": len(entries) > limit}
+
+    def playlist_page(self, url, offset=0, limit=100, *, cancel_event=None, status_hook=None):
+        validate_url(url)
+        opts = self._options(cancel_event, status_hook)
+        opts.update({"noplaylist": False, "extract_flat": True,
+                     "playlist_items": f"{offset + 1}:{offset + limit + 1}"})
+        check_cancelled(cancel_event)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info or "entries" not in info:
+                raise ValueError("Esta URL não retornou uma playlist.")
+            return self._playlist_result(info, url, offset, limit, cancel_event)
 
     @staticmethod
     def formats(info, kind):
@@ -139,6 +195,12 @@ class YtDlpWrapper:
                    key=lambda item: (*(item[1].get(k) or 0 for k in keys), item[0]))[1]
 
     def quality_choices(self, info, container):
+        if info.get("_type") == "playlist":
+            if container == "MP3":
+                return [("Melhor áudio de cada item", None),
+                        ("Fonte até 128 kb/s (quando informado)", {"audio_ceiling": 128})]
+            return [("Melhor disponível em cada item", None)] + [
+                (f"Limite por item: até {n}p / linhas", {"ceiling": n}) for n in (2160, 1440, 1080, 720, 480, 360)]
         kind = "video" if container == "MP4" else "audio"
         formats = self.formats(info, kind)
         if not formats:
@@ -146,7 +208,13 @@ class YtDlpWrapper:
         choices = [("Melhor disponível (automático)", None)]
         if kind == "video":
             heights = sorted({f["height"] for f in formats if f.get("height")}, reverse=True)
-            choices.extend((f"{height:g}p", height) for height in heights)
+            for height in heights:
+                selected = self.select_best_format(
+                    {"formats": [f for f in formats if f.get("height") == height]}, "video")
+                width = selected.get("width")
+                dimensions = f"{width:g} × {height:g}" if width else f"{height:g} px de altura"
+                name = self.quality_label(selected)
+                choices.append((f"{name} — {dimensions}" if name else dimensions, height))
         else:
             rates = sorted({f["abr"] for f in formats if f.get("abr")}, reverse=True)
             choices.extend((f"Fonte: {rate:g} kb/s", rate) for rate in rates)
@@ -156,7 +224,14 @@ class YtDlpWrapper:
         kind = "video" if container == "MP4" else "audio"
         formats = self.formats(info, kind)
         field = "height" if kind == "video" else "abr"
-        if quality is not None:
+        if isinstance(quality, dict):
+            ceiling = quality.get("ceiling") if kind == "video" else quality.get("audio_ceiling")
+            def level(fmt):
+                label = self.quality_label(fmt) if kind == "video" else None
+                return int(label[:-1]) if label else (fmt.get(field) or 0)
+            if ceiling:
+                formats = [f for f in formats if level(f) <= ceiling]
+        elif quality is not None:
             formats = [f for f in formats if f.get(field) == quality]
         best = self.select_best_format({"formats": formats}, kind) if formats else {}
         if not best:
@@ -176,14 +251,15 @@ class YtDlpWrapper:
     def output_template(destination, container, quality=None):
         # Escape literal percent signs in directory names from yt-dlp templating.
         directory = str(Path(destination).resolve()).replace("%", "%%")
-        label = "best" if quality is None else f"{quality:g}"
+        label = ("best" if quality is None else f"limit-{next(iter(quality.values()))}"
+                 if isinstance(quality, dict) else f"{quality:g}")
         return str(Path(directory) / f"%(title).100s [%(id).40s] [{container.lower()}-{label}].%(ext)s")
 
     def download(self, url, format_id, outtmpl, postprocessors=None, progress_hook=None,
                  *, cancel_event=None, status_hook=None):
         validate_url(url)
         check_cancelled(cancel_event)
-        if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        if not tool_path("ffmpeg") or not tool_path("ffprobe"):
             raise RuntimeError("FFmpeg e FFprobe precisam estar no PATH. Consulte o README.")
         audio = any(p.get("key") == "FFmpegExtractAudio" for p in postprocessors or [])
         target_ext = ".mp3" if audio else ".mp4"
