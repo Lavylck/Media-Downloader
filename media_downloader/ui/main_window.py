@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
         media.addLayout(dest_layout)
 
         buttons = QHBoxLayout()
-        self.download_btn = QPushButton("↓  Baixar MP4")
+        self.download_btn = QPushButton("Baixar")
         self.download_btn.setObjectName("downloadButton")
         self.download_btn.setAccessibleName("Baixar mídia")
         self.download_btn.setMinimumHeight(64)
@@ -319,12 +319,11 @@ class MainWindow(QMainWindow):
             phase, caption = "ANÁLISE AUTOMÁTICA AGENDADA", "Preparando análise…"
         else:
             phase = "PRONTO PARA BAIXAR" if self.download_btn.isEnabled() else "AGUARDANDO CONFIGURAÇÃO"
-            caption = (f"+  Adicionar à fila ({len(self.playlist_panel.selected)})"
-                       if self.media_info and self.media_info.get("_type") == "playlist"
-                       else f"{'+  Adicionar' if self.queue.busy else '↓  Baixar'} {self.format_combo.currentText()}")
+            caption = "Baixar"
             if self.queue.current and not self._form_cleared:
                 phase = f"FILA • {STATE_NAMES.get(self.queue.current.state, '')}"
-                caption = f"{STATE_NAMES.get(self.queue.current.state, 'Na fila')} · + Adicionar"
+                caption = ("Baixando..." if self.queue.current.state == "downloading"
+                           else STATE_NAMES.get(self.queue.current.state, "Na fila"))
             elif self.last_output:
                 phase = "DOWNLOAD CONCLUÍDO"
                 caption = f"✓ Concluído · Baixar {self.format_combo.currentText()}"

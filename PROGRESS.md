@@ -1,5 +1,27 @@
 # Estado do projeto — V3 concluída e validada localmente
 
+## Ajuste pontual — texto do botão principal (2026-11-18)
+
+- O botão principal mostra **Baixar** quando pronto e **Baixando...** durante
+  a transferência, sem o texto “+ Adicionar”. Os demais estados, o botão “+”
+  separado, o layout, o estilo e o comportamento foram mantidos.
+- Suíte completa (`unittest discover -s media_downloader/tests -q`):
+  **78/78** em Windows (31,898 s) e **78/78** em offscreen (31,068 s),
+  sem skips. O teste do botão verifica os novos rótulos, o tamanho, a
+  centralização e a disponibilidade do “+” separado. Diagnóstico, `pip check`
+  e `git diff --check` sem erros.
+- Publicação autorizada apenas da branch `feature/v3` no repositório privado
+  `Lavylck/Media-Downloader`; sem merge, alteração de visibilidade ou Release.
+- EXE e instalador Windows reconstruídos em `dist/`, com hashes em
+  `dist/SHA256SUMS.txt`. O EXE passou nos testes reais de MP4, MP3, playlist
+  e histórico (`test-artifacts/windows-20261118-150716/validation.json`); a
+  captura confirma o rótulo **Baixar**. As sete resoluções do ICO foram
+  conferidas no Setup. O teste de instalação não foi repetido: o validador
+  detectou uma instalação ou atalho existente e não o substituiu.
+- Conferidos os nomes dos arquivos nos commits a enviar e os padrões
+  comuns de credenciais; as correspondências eram dados fictícios de testes.
+  Builds, logs e artefatos permaneceram fora do Git.
+
 ## Atualização — identidade oficial, CAPA e controle de transferências (2026-11-18)
 
 - Checkpoint pré-alterações: `checkpoint/v3-before-official-ui` (`397eba6`),
@@ -26,7 +48,7 @@
   e área de trabalho. Testes reais de download, playlist, histórico, reinstalação
   e desinstalação preservando dados. Captura do cabeçalho oficial no EXE instalado
   inspecionada. Resultado: `test-artifacts/windows-20261118-143823/validation.json`.
-- Artefatos atuais (hashes anteriores abaixo são históricos):
+- Artefatos daquela atualização (hashes históricos):
   - `dist/MediaDownloader/MediaDownloader.exe` — SHA256
     `68ca2cf11f134622a1c194371053b1b2d759b8872a734b02e601f372c4362520`;
   - `dist/installer/MediaDownloader-3.0.0-Setup-x64.exe` — SHA256
