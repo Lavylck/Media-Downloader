@@ -11,14 +11,16 @@ IDs de commits, branches ou decisões de mídia como se fossem regras universais
   e `git diff`. Uma interrupção de execução não autoriza reiniciar implementações.
 - V1 manualmente validada pelo usuário, preservada em `master`:
   `948ef054d82bdc87ba1327205ea24464d6c27a1f`.
-- Evolução atual exclusivamente em **`feature/v2`**, com commits locais.
+- V2 validada manualmente, preservada em `feature/v2` (`a04ebf1`) e no tag local
+  `checkpoint/v2-validated`. Evolução atual em **`feature/v3`**, sem publicação.
 - O remoto privado `Lavylck/Media-Downloader` já existe. Não criar outro,
   não modificar `master`, não fazer merge/push sem nova autorização explícita.
 - Não apagar arquivos desconhecidos, backups ou históricos do usuário.
   `.gitignore` não remove arquivos já rastreados: revisar também o histórico
   antes de qualquer publicação autorizada.
-- Sem expansão para playlists, lives, DRM, cookies automáticos ou instalador
-  nesta etapa. Preserve a base de download já validada.
+- Escopo autorizado V3: preview, fila sequencial, playlists explícitas, SQLite,
+  executável PyInstaller e instalador por usuário. Lives, DRM e cookies
+  automáticos permanecem fora do escopo. Preserve MP4/MP3 e a base assíncrona.
 
 ## 2. Ambiente e mapa do código
 
@@ -33,6 +35,10 @@ IDs de commits, branches ou decisões de mídia como se fossem regras universais
 | `media_downloader/ui/main_window.py` | Widgets, estados, debounce, seleção e ciclo de vida das QThreads |
 | `ui/analysis_worker.py` | Análise síncrona no worker; sinais com ID de requisição |
 | `ui/download_worker.py` | Transferência/conversão no worker; progresso limitado a aproximadamente 10 Hz |
+| `queue.py` | Fila sequencial, snapshot por item, cancelamento e cleanup nativo |
+| `history.py` | SQLite em thread dedicada, preferências, recuperação e sanitização |
+| `ui/preview.py` | Miniaturas via QtNetwork, cache limitado e descarte de respostas antigas |
+| `ui/playlist_panel.py`, `ui/queue_panel.py`, `ui/history_panel.py` | Seleção/paginação e apresentação |
 | `ui/theme.py`, `ui/themes/` | QSS, estado visual e SVG local; sem recursos externos |
 | `downloader/yt_dlp_wrapper.py` | Rede, formatos reais, FFmpeg, destino e confirmação do arquivo final |
 | `downloader/worker.py` | Apenas alias de compatibilidade; não criar outro worker |
@@ -58,7 +64,8 @@ Os caminhos da tabela após a primeira linha são relativos a `media_downloader/
   ocioso. Cancelar/fechar param o timer e eliminam a intenção pendente.
 - Botão Baixar exige mídia da URL atual, qualidade disponível e destino não vazio.
   Destino inválido/inacessível é tratado pelo worker, sem consultas de rede
-  para validar pastas a cada tecla. Durante download, URL/seleções ficam bloqueadas.
+  para validar pastas a cada tecla. Na V3, URL/seleções podem configurar outro item
+  durante download: a fila mantém snapshot independente da seleção/destino.
 
 ## 4. Invariantes de Qt e processamento
 
@@ -71,6 +78,10 @@ Os caminhos da tabela após a primeira linha são relativos a `media_downloader/
   `_stopped` conserva referências até **`wait(0)` não bloqueante** confirmar
   término nativo; QTimer reagenda a consulta. Nunca substituir por `wait()`.
   Houve abortos intermitentes com liberação antecipada no ambiente Windows.
+- Análise e fila são independentes; apenas uma transferência e uma análise da
+  GUI por vez. Retry não pode alterar o item atual antes do cleanup nativo.
+- QTimer.singleShot de instância usa contexto QObject para não executar depois
+  da destruição. Fechamento aguarda também o flush/cleanup da thread SQLite.
 - Fechar durante tarefa mantém event loop/janela vivos até cleanup.
   Uma chamada de rede ou etapa FFmpeg já iniciada pode precisar terminar.
 - Hook yt-dlp recebe **um dicionário**. Progresso é por transferência;
@@ -117,7 +128,11 @@ Remove-Item Env:QT_QPA_PLATFORM
   Acesso externo falho não equivale automaticamente a regressão.
 - Não rodar dois testes **nativos** de clipboard/cursor ao mesmo tempo.
 - Registrar comandos, resultados, limitações e intervenção manual em PROGRESS.
-  V1 validada pelo usuário não significa que ele já avaliou o visual V2.
+  V1/V2 validadas pelo usuário não significam aceite humano da V3.
+- Build: `python scripts/build_windows.py --installer`; validação real do pacote:
+  `python scripts/validate_windows.py --installer`. Artefatos são locais/ignorados.
+- Preservar o ícone temporário existente. Integração do ícone oficial exige
+  solicitação futura; não usar `--icon` nesta etapa.
 
 ## 7. Commits
 

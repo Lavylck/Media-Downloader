@@ -1,4 +1,162 @@
-# Estado do projeto — Neon V2 validada localmente
+# Estado do projeto — V3 concluída e validada localmente
+
+## Auditoria e estabilização V3 — 2026-11-18
+
+### Continuidade e estado recebido
+
+- Branch `feature/v3`, HEAD inicialmente `a04ebf1`, mesma base de `feature/v2`
+  e `checkpoint/v2-validated`. `master` preservada em `948ef05`.
+- V1/V2 já têm aceite manual do usuário. **V3 ainda aguarda aceite visual humano.**
+- Implementação e empacotamento V3 concluídos nesta auditoria; nenhuma regressão
+  conhecida nos fluxos exercitados. Pendências deliberadas estão ao fim desta seção.
+- `git status`, `git diff`, arquivos novos, documentação e todos os módulos ativos
+  revisados. A V3 estava não commitada: 14 arquivos rastreados modificados, módulos
+  de fila/histórico/preview, testes e scripts de distribuição novos.
+- Nenhum commit posterior à V2 nem evidência que permita atribuir alterações
+  específicas ao Gemma. `teste-gemma.txt` preservado e ignorado; backups e históricos
+  desconhecidos não foram apagados. Nenhum merge/push/remoto novo.
+- PyInstaller 6.22.3 e Pillow 13.0.0 já estavam instalados, apesar do checkpoint
+  anterior dizer que o empacotamento estava pendente. Build/instalador foram
+  efetivamente executados nesta auditoria.
+- Baseline recebida: **66 testes, 65 aprovados e 1 falha, 21,867 s**.
+  O teste HTTP de playlist herdava MP3 salvo por outro caso e esperava vídeo.
+
+### Entrega funcional preservada e estabilizada
+
+- MP4/MP3, qualidades reais (rótulo do extrator + dimensões), análise com debounce
+  e IDs de tentativa, preview proporcional e assíncrono.
+- Fila sequencial independente da análise da próxima mídia; snapshot por item,
+  deduplicação de itens ativos, erro isolado, cancelar/remover/repetir e grupos.
+- Playlists explícitas, páginas de 100, selecionar itens/todos, parar carregamento
+  sem perder seleção, limites de qualidade por item e indicação de indisponíveis.
+- SQLite em thread dedicada com WAL, pesquisa/filtros/paginação, arquivos ausentes,
+  repetição, exclusão apenas do registro, preferências e recuperação de interrompidos.
+- Cache de miniaturas limitado a 50 MiB, transferência limitada a 8 MiB/imagem,
+  limite de pixels de decodificação e descarte de respostas obsoletas.
+- Pacote onedir e instalador por usuário com Python/Qt/yt-dlp/EJS/Node/FFmpeg/FFprobe.
+  Ícone temporário preexistente preservado; **ícone oficial não integrado/alterado**.
+
+### Problemas comprovados e corrigidos
+
+1. Isolamento de dados dos testes HTTP: preferência/histórico de um teste não
+   alteram o formato esperado pelo seguinte.
+2. Erro ou parada de paginação deixava `loading`/botão presos: retry manual
+   disponível, seleção e páginas anteriores conservadas.
+3. Retry no intervalo entre conclusão e cleanup mudava sucesso para falha:
+   item atual protegido até `wait(0)` confirmar término nativo.
+4. Fila encerrada ainda aceitava trabalho que nunca executaria: entrada/retry
+   recusados após fechamento. Retry válido limpa caminho/tamanho/progresso antigos.
+5. Preferências tardias sobrescreviam formato já alterado: escolha atual preservada.
+6. URL sensível podia escapar pelo título (adicionar links) ou `sig` abreviado:
+   sanitização de títulos/erros e bloqueio de URLs reconhecidas como assinadas.
+   Miniaturas usam a mesma regra para desabilitar cache persistente.
+7. Identificadores de miniaturas se acumulavam após término: liberados com serial
+   único que mantém proteção contra resultados obsoletos.
+8. Callback de fechamento podia executar depois de destruir MainWindow:
+   timers agora associados ao contexto QObject. A exceção foi observada mesmo
+   quando unittest imprimia OK; regressão específica captura sys.excepthook.
+9. Sucesso anterior continuava no CTA após erro do próximo item: estado apresentado
+   reiniciado no início de cada item, mantendo histórico anterior.
+10. Cards/filtros ultrapassavam largura disponível em 620×520 e linhas podiam cortar
+    texto: grades para ações/filtros e altura de linha calculada pela quebra.
+
+### Validação automatizada
+
+| Verificação | Resultado |
+|---|---|
+| Baseline recebida | 65/66; falha investigada e corrigida no isolamento do teste |
+| Regressões novas antes das correções | seis casos reproduzidos; depois, dois adicionais de UI |
+| Suíte final offscreen | **76 aprovados, zero skips, 25,399 s** |
+| Suíte Windows nativo intermediária | 74 aprovados, zero skips, 27,530 s |
+| Suíte final Windows, escala 150% | **76 aprovados, zero skips, 26,605 s** |
+| Diagnóstico | Python 3.13.17, Qt 6.12.0, yt-dlp 2026.10.26/EJS 0.8.0, FFmpeg/FFprobe 9.0.2, Node 26.13.1 OK |
+| `pip check` | No broken requirements found |
+| `git diff --check` | Sem erros de whitespace |
+
+Comandos executados na raiz:
+
+```powershell
+.\.venv\Scripts\python.exe -m media_downloader.diagnostics
+.\.venv\Scripts\python.exe -X faulthandler -m unittest discover -s media_downloader/tests -v
+$env:QT_QPA_PLATFORM = 'windows'
+$env:QT_SCALE_FACTOR = '1.5'
+.\.venv\Scripts\python.exe -X faulthandler -m unittest discover -s media_downloader/tests -v
+Remove-Item Env:QT_QPA_PLATFORM
+Remove-Item Env:QT_SCALE_FACTOR
+.\.venv\Scripts\python.exe -m pip check
+git diff --check
+```
+
+HTTP/FFmpeg/FFprobe reais: MP4 com áudio, MP3, DASH separado, conversão HuffYUV,
+404, destino inválido, duplicatas, playlist com falha intermediária e continuação,
+103 itens em duas páginas sem repetição/omissão. Miniaturas HTTP: cache público,
+URL assinada sem cache, resposta antiga ignorada, proporções variadas.
+SQLite: fechamento com flush, reabertura, recuperação e remoção sem apagar mídia.
+Nenhum teste nativo de clipboard/cursor executado em paralelo a outro nativo.
+
+### Executável e instalador
+
+```powershell
+.\.venv\Scripts\python.exe scripts/build_windows.py --installer
+.\.venv\Scripts\python.exe scripts/validate_windows.py --installer
+.\.venv\Scripts\python.exe scripts/validate_windows.py --installer --public-url 'https://www.youtube.com/watch?v=jNQXAC9IVRw'
+```
+
+- PyInstaller onedir + Inno Setup 7.1.1 portátil, obtido com hash conferido.
+- Primeiro ciclo completo aprovado:
+  `test-artifacts/windows-20261118-092448/validation.json`.
+- **Ciclo final completo aprovado**, incluindo fonte externa:
+  `test-artifacts/windows-20261118-093045/validation.json`.
+  `success=true`, instalação de teste removida, nenhum erro/traceback nos logs.
+- Executável rodou fora da raiz com PATH restrito ao System32: ferramentas
+  confirmadas em `_internal/bin`, sem depender do Python/FFmpeg/Node do PATH.
+- MP4/MP3 e playlist executados no binário; FFprobe incluído confirmou streams,
+  duração >1 s, arquivos não vazios e progresso final 100%.
+- Histórico confirmado após reinício. Instalação por usuário, registro/atalho,
+  download instalado, reinstalação e desinstalação exercitados.
+- Hashes de banco/downloads antes/depois da desinstalação coincidiram; atalho e
+  registro removidos. A instalação de teste foi desinstalada, sem tocar dados reais.
+- Build final concluído após os ajustes de layout:
+  `test-artifacts/v3-build-final.log`. Os dois avisos PyInstaller são sobre
+  integrações opcionais `urllib3.contrib.emscripten/js` e `curl_cffi`.
+- Manifesto `_internal/licenses/build-manifest.json`: versões, hashes dos três
+  executáveis externos e **35 arquivos de fonte/recurso conferidos contra a árvore**.
+- Instalador: `dist/installer/MediaDownloader-3.0.0-Setup-x64.exe`,
+  **235.969.363 bytes**, SHA256:
+  `63cd14b8ad3586087412bcf57b093262d38bc694d753e474cbe37db526100a79`.
+- Executável: `dist/MediaDownloader/MediaDownloader.exe`,
+  **11.761.735 bytes**, SHA256:
+  `cfafb997ea45adb3508c0e388125de7cd89f6803c9e562ff232c8354cc916f1d`.
+  Pasta onedir completa: 689.617.315 bytes; o EXE isolado não é portátil.
+- Hashes de entrega também em `dist/SHA256SUMS.txt` (artefato local ignorado).
+- **YouTube real no EXE final / PATH restrito:** “Me at the zoo”:
+  MP4 **637.033 bytes**, H.264 320×240 + AAC, 19,063356 s;
+  MP3 **231.650 bytes**, 19,063583 s. Dois itens concluídos, 100% e histórico
+  persistido; miniaturas carregadas nos cards. Capturas de mídia, fila e
+  histórico inspecionadas; não substituem aceite humano.
+- Timer do smoke: 602 ticks no teste público; maior intervalo 1,0114 s.
+  Nos downloads locais do pacote: 244/248 ticks, intervalos máximos
+  0,3722/0,3952 s. Essas medições incluem o harness/capturas e inicialização;
+  não se atribuiu uma causa isolada nem se alegou ganho de desempenho.
+
+### Commits locais
+
+- `210bcb1` — V3 integrada e estabilizada, com suíte/regressões.
+- `08cee44` — build Windows, instalador e validador do ciclo de instalação.
+- Documentação/evidências em commit separado.
+- `master`, `feature/v2` e tag da V2 preservados; nenhuma publicação.
+
+### Limitações/pendências deliberadas
+
+- Aceite humano da interface V3 e integração futura do ícone oficial.
+- Assinatura digital não configurada; pacote local não assinado.
+- Validação neste Windows 11 com PATH restrito, sem VM limpa/segundo computador.
+- Cancelamento aguarda a etapa de rede/FFmpeg já iniciada. Lives/DRM/cookies
+  automáticos seguem fora do escopo; disponibilidade externa depende da fonte.
+- Publicação/merge não autorizados. Avisos de componentes em
+  `distribution/THIRD_PARTY_NOTICE.md`; pacote local não é release pública.
+
+## Registro da V2
 
 ## Estado atual e checkpoint
 

@@ -107,3 +107,29 @@ atual. A interrupção inicial da V2 deixou três arquivos modificados; a retoma
 leu o diff e completou os contratos de sinais e testes, sem criar segunda
 implementação de debounce. Use `GLOBAL_AGENT_TEMPLATE.md` para formalizar esse
 procedimento em outros projetos.
+
+## 5. Auditoria V3 — 2026-11-18
+
+- A retomada encontrou V3 inteira não commitada sobre o checkpoint V2, incluindo
+  scripts de build. Leitura de Git/código preservou o trabalho; não houve reinício.
+- Baseline: 65/66 passaram. A falha real de playlist era contaminação entre testes:
+  preferência MP3 salva por um caso anterior, mas asserção esperava vídeo.
+  Diretório de dados por teste eliminou a dependência da ordem.
+- Seis casos adicionais reproduziram problemas antes da correção: paginação
+  travada após erro, botão desabilitado após parar, retry antes do cleanup,
+  entrada de trabalho em fila fechada, preferência tardia sobrescrevendo seleção
+  e URL sensível persistida por título/assinatura abreviada.
+- Suíte chegou a imprimir `OK` junto com `Internal C++ object (MainWindow) already
+  deleted`: callback singleShot pendente depois de deleteLater. Contexto QObject
+  nos timers impede execução após destruição; regressão captura sys.excepthook.
+  **Resultado verde sozinho não basta: revisar também stderr.**
+- Miniaturas agora liberam os identificadores de requisições finalizadas e usam
+  a mesma classificação de URL sensível do histórico para evitar cache em disco.
+  HTTP real verifica cache público e duas transferências para a URL assinada.
+- A revisão de telas pequenas encontrou largura mínima de card 603 px para
+  viewport de 598 px e filtros do histórico com mínimo de 915 px. Ações/filtros
+  em grade e altura das linhas calculada pela quebra de texto corrigiram os
+  cortes. Regressão cobre as abas Fila/Histórico além da aba Mídia.
+- Depois de sucesso seguido de erro, a fase/CTA ainda anunciavam o sucesso
+  anterior. Limpar o resultado apresentado ao começar outro item corrigiu a
+  inconsistência sem alterar registros anteriores no histórico.
