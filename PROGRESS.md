@@ -1,5 +1,38 @@
 # Estado do projeto — V3 concluída e validada localmente
 
+## Atualização — identidade oficial, CAPA e controle de transferências (2026-11-18)
+
+- Checkpoint pré-alterações: `checkpoint/v3-before-official-ui` (`397eba6`),
+  com os três originais fornecidos em `assets/icons/`. PNG transparente no
+  cabeçalho; ICO original em sete resoluções na janela, EXE e Setup. Selo e
+  marca MD removidos. `CAPA` centralizada, sem rodapé; colar/X dentro da URL.
+- Fila: pausar pendentes ou HTTP(S) direto com suporte a bytes e validador.
+  O item ativo libera a vez após término da thread. Retomada na mesma sessão
+  usa parcial exclusivo, `Range`/`If-Range` e exige resposta 206 consistente.
+  Conversão/fluxos incompatíveis não oferecem pausa. Cancelamento definitivo
+  remove o item e seus temporários, preservando histórico e arquivos finais.
+- Cancelar na tela principal aguarda a análise e o item ativo, limpa os campos
+  e o progresso e permite que itens independentes prossigam.
+- `python -X faulthandler -m unittest discover -s media_downloader/tests -q`:
+  **78/78** em offscreen (29,595 s) e **78/78** em Windows (35,493 s), sem skips.
+  Clique real de colar, debounce, pausa, avanço, requisição de retomada no byte
+  salvo e saída idêntica ao MP4 original. Cancelar removeu os parciais e manteve
+  o arquivo concluído e o item seguinte. Caso adicional de servidor que passou
+  a devolver resposta inteira: teste integrado reexecutado com sucesso (5,127 s),
+  sem reinício silencioso. Diagnóstico, `pip check` e `git diff --check` OK.
+- `python scripts/build_windows.py --installer` e `python scripts/validate_windows.py
+  --installer`: sucesso. Conferidos bytes das sete imagens dos grupos PE no EXE
+  e no Setup, PNG/ICO embarcados, destinos e ícones dos atalhos do menu Iniciar
+  e área de trabalho. Testes reais de download, playlist, histórico, reinstalação
+  e desinstalação preservando dados. Captura do cabeçalho oficial no EXE instalado
+  inspecionada. Resultado: `test-artifacts/windows-20261118-143823/validation.json`.
+- Artefatos atuais (hashes anteriores abaixo são históricos):
+  - `dist/MediaDownloader/MediaDownloader.exe` — SHA256
+    `68ca2cf11f134622a1c194371053b1b2d759b8872a734b02e601f372c4362520`;
+  - `dist/installer/MediaDownloader-3.0.0-Setup-x64.exe` — SHA256
+    `08ae002a3a4bbb50afbb296a2de38efa6b3a9e91c04792d6cd8d68b475b444f6`.
+  `dist/SHA256SUMS.txt` é regenerado pelo build. Pacote local sem assinatura.
+
 ## Auditoria e estabilização V3 — 2026-11-18
 
 ### Continuidade e estado recebido

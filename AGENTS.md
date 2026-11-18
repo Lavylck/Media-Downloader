@@ -131,8 +131,12 @@ Remove-Item Env:QT_QPA_PLATFORM
   V1/V2 validadas pelo usuário não significam aceite humano da V3.
 - Build: `python scripts/build_windows.py --installer`; validação real do pacote:
   `python scripts/validate_windows.py --installer`. Artefatos são locais/ignorados.
-- Preservar o ícone temporário existente. Integração do ícone oficial exige
-  solicitação futura; não usar `--icon` nesta etapa.
+- Identidade oficial autorizada: PNG transparente e ICO multirresolução em
+  `assets/icons`. Usar os originais sem redesenhar. O validador compara os
+  recursos PE do EXE/Setup ao ICO e verifica os dois atalhos instalados.
+- Pausa de transferência exige parcial exclusivo e retomada HTTP validada;
+  não simular retomada por retry. Cancelar remove o item após o término nativo,
+  sem varrer a pasta de destino. Cancelar na aba Mídia também limpa o formulário.
 
 ## 7. Commits
 

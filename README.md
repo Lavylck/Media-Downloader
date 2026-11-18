@@ -48,7 +48,8 @@ da **fonte**, não uma promessa de bitrate final.
   atalho na área de trabalho.
 - Histórico, preferências, logs e cache: `%LOCALAPPDATA%\MediaDownloader`.
   Desinstalar preserva esses dados e os downloads.
-- O ícone temporário preexistente foi mantido. **Integração do ícone oficial pendente.**
+- Identidade oficial: `assets/icons/media_downloader_icone_oficial.ico` (7 tamanhos)
+  para o Windows e `assets/icons/media_downloader_icone_neon_transparente.png` no cabeçalho.
 - Build local sem assinatura digital. Detalhes em `distribution/README_WINDOWS.md`.
 
 ## Execução pelo código-fonte (PowerShell, na raiz)
@@ -91,6 +92,10 @@ EJS 0.8.0, FFmpeg/FFprobe 9.0.2 e Node 26.13.1.
 3. Escolha a pasta e clique **Baixar**.
 4. A conclusão exibe o caminho real do arquivo final.
 
+O botão de prancheta dentro do campo vazio cola o link e inicia a mesma análise
+automática de Ctrl+V. Quando há texto, o X limpa o campo. O painel **CAPA**
+mantém a proporção da imagem dentro da moldura neon.
+
 Você pode substituir o link durante a análise e configurar a próxima mídia
 durante um download. O botão **+** aceita um link por linha, com melhor qualidade
 no formato atual. Duplicatas ativas com URL/destino/formato/qualidade iguais são
@@ -102,8 +107,18 @@ retornam apenas uma playlist também mostram a seleção. **Selecionar todos**
 carrega as páginas restantes; **Parar carregamento** conserva o que já foi
 carregado. Após erro de página, **Carregar mais** permite tentar novamente.
 
-Cancelar na aba Mídia cancela a análise atual ou, sem análise, o download atual.
-Para cancelar todos os downloads, use **Cancelar toda a fila**. Fechar cancela
+**Pausar** mantém o item na fila e libera a vez para o próximo. Antes do início,
+qualquer item pode ser pausado; durante a transferência, a opção é habilitada
+para mídia HTTP(S) direta com tamanho, suporte a intervalos de bytes e um
+validador da fonte. **Retomar** usa o parcial da mesma sessão. Se o servidor
+recusar o intervalo ou a mídia mudar, o item falha; **Tentar novamente** começa
+uma tentativa nova. Conversão, transmissões fragmentadas e faixas combinadas
+não oferecem pausa durante o processamento.
+
+**Cancelar** na fila remove a tarefa e descarta seus temporários exclusivos.
+Na aba Mídia, **Cancelar** interrompe a análise e o download ativos e limpa o
+formulário após seu encerramento, inclusive quando só havia mídia selecionada.
+Os demais itens continuam na fila. Para cancelar todos, use **Cancelar toda a fila**. Fechar cancela
 a fila e aguarda a limpeza segura. Após encerramento inesperado, itens persistidos
 ativos aparecem como **Interrompido**, sem reinício automático.
 
@@ -154,7 +169,7 @@ O smoke usa colagem automática por padrão; `--manual` testa o botão.
   casos a UI informa a ausência em vez de inventar metadados.
 - Cancelamento é cooperativo. Uma chamada de rede aguarda seu timeout; FFmpeg
   já iniciado termina a etapa atual antes de encerrar. A janela permanece
-  responsiva e aberta até a limpeza segura. Parciais podem ser retomados.
+  responsiva e aberta até a limpeza segura.
 - Preservação de duplicatas usa o nome final (ID, seleção e formato);
   não verifica o conteúdo de um arquivo já existente não vazio.
 - O download revalida metadados na fonte para evitar reutilizar URLs de mídia
