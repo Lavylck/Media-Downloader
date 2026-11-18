@@ -1,4 +1,29 @@
-# Estado do projeto — V3 concluída e validada localmente
+# Estado do projeto — V3.0.0 publicada no repositório privado
+
+## Publicação oficial — 2026-11-18
+
+- [Media Downloader v3.0.0](https://github.com/Lavylck/Media-Downloader/releases/tag/v3.0.0)
+  publicada às 18:16:34 UTC, estável (não rascunho nem prerelease).
+- A tag anotada `v3.0.0` aponta para o commit aprovado
+  `a26acf9141a71d21537f44067d140adcae579607`, que contém os rótulos **Baixar**
+  e **Baixando...** sem “+ Adicionar”. O commit pós-publicação só registra a entrega.
+- **78/78** testes no Windows nativo (30,433 s), sem skips. Conferidos
+  36 hashes de fontes do manifesto de build, ferramentas embarcadas, os sete
+  tamanhos do ICO no executável e no Setup, e os hashes dos binários.
+- ZIP de 300 arquivos extraído e comparado ao pacote original. A cópia
+  extraída rodou com PATH restrito ao System32: MP4/MP3 conferidos pelo FFprobe
+  incluído; dois registros SQLite confirmados após reinício. A instalação do
+  Setup final não foi repetida sobre a instalação/atalho existente.
+- Anexos confirmados pela API do GitHub como `uploaded`, com digest idêntico
+  ao cálculo local e aos SHA-256 das notas da Release:
+  - `MediaDownloader-3.0.0-Setup-x64.exe` — 237.009.200 bytes —
+    `09b18590e5020dd97f99a8a7e02875480c56b27ca0ff603073f3ac67d819e386`.
+  - `MediaDownloader-3.0.0-Portable-x64.zip` — 276.803.945 bytes —
+    `f4d8f4a04682a5341aa5ea76bb60d5b1543f5df70a023fed2f2f702eb8b3ba06`.
+- Git: nenhum cache, banco pessoal ou temporário encontrado no histórico
+  verificado; correspondências de credenciais eram fixtures fictícias.
+  `master` e `feature/v2` preservadas. Repositório confirmado `PRIVATE` após
+  publicar. Binários não assinados, mantidos como anexos, fora do Git.
 
 ## Ajuste pontual — texto do botão principal (2026-11-18)
 

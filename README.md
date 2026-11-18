@@ -4,7 +4,8 @@ Aplicativo desktop Windows para analisar mídias suportadas pelo yt-dlp e baixar
 **MP4** ou extrair **MP3**, com interface PySide6 em português.
 
 Esta evolução está na branch local **`feature/v3`**. V1 e V2 validadas manualmente
-permanecem em `master` e `feature/v2`. A V3 não foi publicada no GitHub.
+permanecem em `master` e `feature/v2`. A [Release estável v3.0.0](https://github.com/Lavylck/Media-Downloader/releases/tag/v3.0.0)
+está disponível no repositório privado para usuários autorizados.
 
 ## Recursos
 
@@ -39,9 +40,10 @@ da **fonte**, não uma promessa de bitrate final.
 
 ## Windows: executável e instalador
 
-- Instalador: `dist/installer/MediaDownloader-3.0.0-Setup-x64.exe`.
-- Portátil: `dist/MediaDownloader/MediaDownloader.exe`; mantenha toda a pasta
-  e seu subdiretório `_internal`.
+- Na Release, baixe `MediaDownloader-3.0.0-Setup-x64.exe` (instalador) ou
+  `MediaDownloader-3.0.0-Portable-x64.zip` (portátil).
+- Para a versão portátil, extraia todo o ZIP e execute
+  `MediaDownloader/MediaDownloader.exe`, mantendo `_internal` ao lado.
 - Incluem Python, Qt, yt-dlp/EJS, Node, FFmpeg e FFprobe.
 - Instalação por usuário, sem administrador, em
   `%LOCALAPPDATA%\Programs\MediaDownloader`. Atalho no menu Iniciar e opção de
@@ -50,7 +52,8 @@ da **fonte**, não uma promessa de bitrate final.
   Desinstalar preserva esses dados e os downloads.
 - Identidade oficial: `assets/icons/media_downloader_icone_oficial.ico` (7 tamanhos)
   para o Windows e `assets/icons/media_downloader_icone_neon_transparente.png` no cabeçalho.
-- Build local sem assinatura digital. Detalhes em `distribution/README_WINDOWS.md`.
+- Binários sem assinatura digital. Confira os SHA-256 nas notas da Release.
+  Detalhes em `distribution/README_WINDOWS.md`.
 
 ## Execução pelo código-fonte (PowerShell, na raiz)
 
@@ -219,5 +222,5 @@ Não execute junto com outra suíte gráfica nativa.
 `GLOBAL_AGENT_TEMPLATE.md`: instruções gerais adaptáveis para Qwen, Gemma e outros.
 `PROJECT_BOOTSTRAP_CHECKLIST.md`: roteiro reutilizável de início, retomada e entrega.
 
-O remoto privado existente é `Lavylck/Media-Downloader`. A etapa atual tem
-apenas commits locais em `feature/v3`; push/merge exigem nova autorização.
+No remoto privado `Lavylck/Media-Downloader`, a tag `v3.0.0` aponta para
+`a26acf9`. Futuras publicações e merges exigem autorização.

@@ -12,7 +12,8 @@ IDs de commits, branches ou decisões de mídia como se fossem regras universais
 - V1 manualmente validada pelo usuário, preservada em `master`:
   `948ef054d82bdc87ba1327205ea24464d6c27a1f`.
 - V2 validada manualmente, preservada em `feature/v2` (`a04ebf1`) e no tag local
-  `checkpoint/v2-validated`. Evolução atual em **`feature/v3`**, sem publicação.
+  `checkpoint/v2-validated`. V3 publicada no repositório privado, com a tag
+  `v3.0.0` no commit aprovado `a26acf9` de **`feature/v3`**.
 - O remoto privado `Lavylck/Media-Downloader` já existe. Não criar outro,
   não modificar `master`, não fazer merge/push sem nova autorização explícita.
 - Não apagar arquivos desconhecidos, backups ou históricos do usuário.
