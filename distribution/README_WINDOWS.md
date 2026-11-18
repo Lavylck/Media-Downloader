@@ -12,8 +12,8 @@ Downloads ficam na pasta escolhida. A desinstalação preserva esses dados.
 Para apagar dados do aplicativo, feche-o e remova explicitamente a pasta de
 dados do usuário; isso não apaga downloads salvos em outro local.
 
-O ícone fornecido nesta compilação é TEMPORÁRIO. Nenhum arquivo oficial aprovado
-foi entregue ao desenvolvimento até a geração deste pacote.
+O cabeçalho usa o PNG transparente oficial; aplicativo, instalador e atalhos
+usam o ícone multirresolução oficial do Media Downloader.
 
 O pacote não possui assinatura digital de código. Windows pode mostrar o
 editor como desconhecido. Consulte `_internal\licenses` para licenças,

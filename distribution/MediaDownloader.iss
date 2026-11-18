@@ -11,7 +11,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist\installer
 OutputBaseFilename=MediaDownloader-{#AppVersion}-Setup-x64
-SetupIconFile=..\build\icon.ico
+SetupIconFile=..\assets\icons\media_downloader_icone_oficial.ico
 UninstallDisplayIcon={app}\MediaDownloader.exe
 Compression=lzma2/fast
 SolidCompression=yes
@@ -31,9 +31,13 @@ Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; Flags: un
 [Files]
 Source: "..\dist\MediaDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Remove only the previous build's shipped temporary artwork during upgrade.
+Type: files; Name: "{app}\_internal\media_downloader\assets\icon.svg"
+
 [Icons]
-Name: "{userprograms}\Media Downloader"; Filename: "{app}\MediaDownloader.exe"; WorkingDir: "{app}"; AppUserModelID: "MediaDownloader.Cyberpunk.3"
-Name: "{userdesktop}\Media Downloader"; Filename: "{app}\MediaDownloader.exe"; WorkingDir: "{app}"; Tasks: desktopicon; AppUserModelID: "MediaDownloader.Cyberpunk.3"
+Name: "{userprograms}\Media Downloader"; Filename: "{app}\MediaDownloader.exe"; IconFilename: "{app}\MediaDownloader.exe"; WorkingDir: "{app}"; AppUserModelID: "MediaDownloader.Cyberpunk.3"
+Name: "{userdesktop}\Media Downloader"; Filename: "{app}\MediaDownloader.exe"; IconFilename: "{app}\MediaDownloader.exe"; WorkingDir: "{app}"; Tasks: desktopicon; AppUserModelID: "MediaDownloader.Cyberpunk.3"
 
 [Run]
 Filename: "{app}\MediaDownloader.exe"; Description: "Abrir Media Downloader"; Flags: nowait postinstall skipifsilent

@@ -13,43 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from media_downloader.paths import VERSION, tool_path
+from media_downloader.resources import ICON_ICO, ICON_PNG
 
 
 def download(url, target):
     if not target.is_file():
         with urllib.request.urlopen(url, timeout=60) as response:
             target.write_bytes(response.read())
-
-
-def prepare_icon(build, supplied=None):
-    from PIL import Image
-    assets = build / "assets"
-    assets.mkdir(parents=True, exist_ok=True)
-    source = Path(supplied) if supplied else next(
-        p for ext in ("ico", "png", "svg") if (p := ROOT / f"media_downloader/assets/icon.{ext}").exists())
-    if source.suffix.lower() not in (".ico", ".png", ".svg"):
-        raise ValueError("Ícone deve ser SVG, PNG ou ICO.")
-    for previous in assets.glob("icon.*"):
-        previous.unlink()  # Only generated staging assets, never user sources.
-    shutil.copy2(source, assets / ("icon" + source.suffix.lower()))
-    png = build / "icon-render.png"
-    if source.suffix.lower() == ".svg":
-        from PySide6.QtCore import Qt
-        from PySide6.QtGui import QImage, QPainter
-        from PySide6.QtSvg import QSvgRenderer
-        image = QImage(256, 256, QImage.Format.Format_ARGB32)
-        image.fill(Qt.GlobalColor.transparent)
-        renderer = QSvgRenderer(str(source))
-        if not renderer.isValid():
-            raise ValueError("SVG inválido.")
-        painter = QPainter(image)
-        renderer.render(painter)
-        painter.end()
-        image.save(str(png))
-        source = png
-    with Image.open(source) as image:
-        image.convert("RGBA").save(build / "icon.ico", sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-    return assets
 
 
 def prepare_notices(build, tools):
@@ -81,6 +51,7 @@ def prepare_notices(build, tools):
              notices / "NODE-LICENSE.txt")
     manifest = {
         "application": VERSION, "python": sys.version,
+        "icons": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (ICON_PNG, ICON_ICO)},
         "sources": {str(path.relative_to(ROOT)).replace("\\", "/"):
                     hashlib.sha256(path.read_bytes()).hexdigest()
                     for folder in (ROOT / "media_downloader", ROOT / "scripts")
@@ -100,7 +71,6 @@ def prepare_notices(build, tools):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--installer", action="store_true")
-    parser.add_argument("--icon", help="Approved SVG/PNG/ICO; default remains explicitly temporary")
     args = parser.parse_args()
     if sys.platform != "win32":
         raise RuntimeError("Execute o build no Windows.")
@@ -109,18 +79,17 @@ def main():
     tools = {name: tool_path(name) for name in ("ffmpeg", "ffprobe", "node")}
     if not all(tools.values()):
         raise RuntimeError("FFmpeg, FFprobe e Node precisam estar disponíveis para montar o pacote.")
-    assets = prepare_icon(build, args.icon)
     licenses = prepare_notices(build, tools)
     command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir",
                "--windowed", "--name", "MediaDownloader", "--noupx",
                "--distpath", str(ROOT / "dist"), "--workpath", str(build / "pyinstaller"),
                "--specpath", str(build), "--paths", str(ROOT),
-               "--icon", str(build / "icon.ico"), "--hidden-import", "PySide6.QtSvg",
+               "--icon", str(ICON_ICO), "--hidden-import", "PySide6.QtSvg",
                "--collect-submodules", "yt_dlp", "--collect-data", "yt_dlp",
                "--collect-all", "yt_dlp_ejs", "--copy-metadata", "yt-dlp",
                "--copy-metadata", "yt-dlp-ejs", "--collect-data", "certifi",
                "--exclude-module", "media_downloader.tests",
-               "--add-data", f"{assets}:media_downloader/assets",
+               "--add-data", f"{ICON_PNG}:assets/icons", "--add-data", f"{ICON_ICO}:assets/icons",
                "--add-data", f"{ROOT / 'media_downloader/ui/themes'}:media_downloader/ui/themes",
                "--add-data", f"{licenses}:licenses"]
     for tool in tools.values():
@@ -134,6 +103,12 @@ def main():
         if not compiler.exists():
             subprocess.run([sys.executable, str(ROOT / "scripts/bootstrap_inno.py")], check=True)
         subprocess.run([str(compiler), str(ROOT / "distribution/MediaDownloader.iss")], check=True)
+        binaries = [output / "MediaDownloader.exe", ROOT / f"dist/installer/MediaDownloader-{VERSION}-Setup-x64.exe"]
+        lines = []
+        for binary in binaries:
+            with binary.open("rb") as f:
+                lines.append(f"{hashlib.file_digest(f, 'sha256').hexdigest()}  {binary.relative_to(ROOT / 'dist').as_posix()}")
+        (ROOT / "dist/SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="ascii")
     print(f"EXECUTABLE: {output / 'MediaDownloader.exe'}")
 
 

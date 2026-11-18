@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import winreg
 
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from media_downloader.tests.test_real_media import TestRealMedia
+from media_downloader.resources import ICON_ICO, ICON_PNG
 
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{E0899E09-1DE4-4305-A491-53299A937351}_is1"
 
@@ -33,6 +35,30 @@ def registered():
 def digest(path):
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def verify_icon(binary):
+    """Compare each RT_ICON referenced by the primary PE group to the supplied ICO."""
+    import pefile
+    ico = ICON_ICO.read_bytes()
+    count = struct.unpack_from("<H", ico, 4)[0]
+    frames = {}
+    for i in range(count):
+        w, h, length, offset = struct.unpack_from("<BB6xII", ico, 6 + 16*i)
+        frames[(w, h)] = ico[offset:offset + length]
+    with pefile.PE(str(binary), fast_load=True) as pe:
+        pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]])
+        types = {e.id: e.directory.entries for e in pe.DIRECTORY_ENTRY_RESOURCE.entries}
+        def data(entry):
+            resource = entry.directory.entries[0].data.struct
+            return pe.get_data(resource.OffsetToData, resource.Size)
+        group = data(types[14][0])
+        assert struct.unpack_from("<H", group, 4)[0] == count, binary
+        images = {entry.id: entry for entry in types[3]}
+        for i in range(count):
+            w, h, index = struct.unpack_from("<BB10xH", group, 6 + 14*i)
+            assert data(images[index]) == frames[(w, h)], (binary, w, h)
+    return sorted(w or 256 for w, h in frames)
 
 
 def main():
@@ -51,11 +77,17 @@ def main():
     exe = ROOT / "dist/MediaDownloader/MediaDownloader.exe"
     installer = ROOT / "dist/installer/MediaDownloader-3.0.0-Setup-x64.exe"
     shortcut = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Media Downloader.lnk"
-    if args.installer and (registered() or shortcut.exists()):
+    desktop = Path(subprocess.check_output(["powershell", "-NoProfile", "-Command",
+                   "[Environment]::GetFolderPath('DesktopDirectory')"], text=True).strip()) / shortcut.name
+    if args.installer and (registered() or shortcut.exists() or desktop.exists()):
         raise RuntimeError("Existe instalação/atalho do usuário; validação não irá substituí-los.")
     result["exe_sha256"] = digest(exe)
+    result["exe_icon_sizes"] = verify_icon(exe)
+    for source in (ICON_PNG, ICON_ICO):
+        assert digest(source) == digest(exe.parent / "_internal/assets/icons" / source.name)
     if args.installer:
         result["installer_sha256"] = digest(installer)
+        result["installer_icon_sizes"] = verify_icon(installer)
 
     def run(binary, name, *options):
         report = artifact / name / "report.json"
@@ -88,7 +120,7 @@ def main():
         if args.installer:
             install_dir = artifact / "installed"
             install_args = [str(installer), "/CURRENTUSER", "/VERYSILENT", "/SUPPRESSMSGBOXES",
-                            "/NORESTART", "/TASKS=", f"/DIR={install_dir}",
+                            "/NORESTART", "/TASKS=desktopicon", f"/DIR={install_dir}",
                             f"/LOG={artifact / 'install.log'}"]
             subprocess.run(install_args, check=True, timeout=180)
             installed = True
@@ -96,6 +128,13 @@ def main():
             assert shortcut.is_file()
             installed_exe = install_dir / "MediaDownloader.exe"
             assert digest(installed_exe) == digest(exe)
+            for link in (shortcut, desktop):
+                assert link.is_file()
+                command = ("$l=(New-Object -ComObject WScript.Shell).CreateShortcut($env:VERIFY_LNK); "
+                           "$l.TargetPath; $l.IconLocation")
+                target, icon = subprocess.check_output(["powershell", "-NoProfile", "-Command", command],
+                                 env={**os.environ, "VERIFY_LNK": str(link)}, text=True).splitlines()
+                assert Path(target) == installed_exe and Path(icon.rsplit(",", 1)[0]) == installed_exe
             run(installed_exe, "installed", "--smoke-url", base + "sample.mp4")
             run(installed_exe, "installed-restart", "--smoke-history")
             # Reinstall/upgrade the same version and check the persisted database.
@@ -111,6 +150,7 @@ def main():
             assert not installed_exe.exists()
             assert not registered()
             assert not shortcut.exists()
+            assert not desktop.exists()
             assert before == {path: digest(path) for path in before}
             result["installer_lifecycle"] = "install, run, restart, reinstall, uninstall; data preserved"
         if args.public_url:
