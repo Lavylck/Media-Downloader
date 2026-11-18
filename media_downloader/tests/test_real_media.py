@@ -264,6 +264,8 @@ class TestRealMedia(unittest.TestCase):
                 offset = int(self.headers.get("Range", "bytes=0-")[6:].split("-")[0])
                 if offset:
                     ranges.append((offset, self.headers.get("If-Range")))
+                    if self.path == "/changed.mp4":
+                        offset = 0  # If-Range no longer matches: server returns a full response.
                 self.send_response(206 if offset else 200)
                 self.send_header("Content-Type", "video/mp4")
                 self.send_header("Content-Length", str(len(payload) - offset))
@@ -343,6 +345,16 @@ class TestRealMedia(unittest.TestCase):
                 self.assertEqual(win.url_edit.text(), "")
                 self.assertEqual(win.progress.value(), 0)
                 self.assertTrue(Path(first.path).is_file())
+
+                changed = win.add_urls([url.replace("range.mp4", "changed.mp4")])[0]
+                wait_until(lambda: changed.resumable, 10000)
+                panel.cards[changed.id].pause.click()
+                wait_until(lambda: not win.queue.busy, 10000)
+                panel.cards[changed.id].pause.click()
+                wait_until(lambda: not win.queue.busy, 10000)
+                self.assertEqual(changed.state, "failed")
+                self.assertIn("retomada", changed.error)
+                self.assertFalse(changed.path)
             finally:
                 clipboard.setText(original)
                 win.close()
