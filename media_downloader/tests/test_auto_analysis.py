@@ -138,6 +138,8 @@ class TestAutoAnalysis(TestUI):
         self.win.cancel_btn.click()
         run_events(200)
         self.assertEqual(self.wrapper.analysis_calls, 0)
+        self.assertFalse(self.win.url_edit.text())
+        self.paste("https://example.com/cancel")
         self.win.analyze_btn.click()
         wait_until(self.settled)
         self.assertEqual(self.wrapper.analysis_calls, 1)

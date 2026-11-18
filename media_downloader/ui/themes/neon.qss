@@ -15,21 +15,8 @@ QListWidget, QTableWidget { background: #100b18; border: 1px solid #49315e; colo
 QHeaderView::section { background: #2b193d; color: #dcbcff; padding: 7px; border: none; }
 QPushButton#addButton { color: #e8cbff; font-size: 24px; padding: 4px 16px; border-color: #b878ee; }
 QLabel { background: transparent; border: none; }
-QLabel#brandMark {
-    color: #dfc7ff;
-    background: #251637;
-    border: 1px solid #7e49be;
-    border-radius: 12px;
-    font-size: 20px;
-    font-weight: 700;
-}
 QLabel#brandTitle { font-size: 25px; font-weight: 700; color: #faf7ff; }
 QLabel#subtitle, QLabel#muted { color: #c4b8d5; font-size: 14px; }
-QLabel#edition {
-    color: #dbbdff; background: #23172f; border: 1px solid #654384;
-    border-radius: 8px; padding: 5px 10px; font-size: 12px;
-    font-family: "Consolas";
-}
 QFrame#card {
     background: #16121f; border: 1px solid #342644; border-radius: 14px;
 }

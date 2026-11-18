@@ -9,6 +9,7 @@ STATE_NAMES = {
     "pending": "Na fila", "analyzing": "Analisando", "downloading": "Baixando",
     "converting": "Convertendo", "completed": "Concluído", "failed": "Erro",
     "cancelled": "Cancelado", "cancelling": "Cancelando", "interrupted": "Interrompido",
+    "pausing": "Pausando", "paused": "Pausado",
 }
 
 
@@ -41,13 +42,17 @@ class QueueCard(QFrame):
         content.addWidget(self.progress)
         actions = QGridLayout()
         self.cancel = QPushButton("Cancelar")
+        self.pause = QPushButton("Pausar")
+        self.pause.clicked.connect(lambda: (queue.resume if item.state == "paused" else queue.pause)(item.id))
         self.retry = QPushButton("Tentar novamente")
         remove = QPushButton("Remover")
         self.cancel.clicked.connect(lambda: queue.cancel(item.id))
         self.retry.clicked.connect(lambda: queue.retry(item.id))
         remove.clicked.connect(lambda: queue.remove(item.id))
         actions.addWidget(self.cancel, 0, 0)
+        actions.addWidget(self.pause, 0, 1)
         actions.addWidget(remove, 0, 1)
+        self.remove_button = remove
         actions.addWidget(self.retry, 1, 0, 1, 2)
         content.addLayout(actions)
         layout.addLayout(content, 1)
@@ -79,6 +84,12 @@ class QueueCard(QFrame):
         self.progress.setRange(0, 0 if item.progress < 0 and item.state in ACTIVE else 100)
         self.progress.setValue(max(0, item.progress))
         self.cancel.setEnabled(item.state in ACTIVE and item.state != "cancelling")
+        self.pause.setVisible(item.state in ACTIVE)
+        self.pause.setText("Retomar" if item.state == "paused" else "Pausar")
+        self.pause.setEnabled(item.state in ("pending", "paused") or
+                              (item.state == "downloading" and item.resumable))
+        self.pause.setToolTip("Antes do início ou em transferência HTTP com retomada por bytes.")
+        self.remove_button.setVisible(item.state not in ACTIVE)
         self.retry.setEnabled(item.state not in ACTIVE and bool(item.url))
         if self.image_url != item.thumbnail:
             self.image_url = item.thumbnail

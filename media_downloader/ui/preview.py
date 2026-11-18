@@ -95,7 +95,7 @@ class ThumbnailView(QWidget):
     def __init__(self, parent=None, compact=False):
         super().__init__(parent)
         self.image = QImage()
-        self.message = "PRÉVIA DA MÍDIA\nAguardando um link"
+        self.message = "Aguardando um link"
         self.setMinimumSize(80 if compact else 230, 60 if compact else 250)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.opacity = 1.0
@@ -157,29 +157,26 @@ class PreviewPanel(QFrame):
         self.service = service
         self.key = f"preview-{id(self)}"
         layout = QVBoxLayout(self)
-        label = QLabel("PRÉVIA")
+        label = QLabel("CAPA")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setObjectName("sectionLabel")
         layout.addWidget(label)
         self.view = ThumbnailView()
         layout.addWidget(self.view, 1)
-        note = QLabel("Imagem completa • proporção original")
-        note.setObjectName("muted")
-        note.setWordWrap(True)
-        layout.addWidget(note)
         service.ready.connect(self._ready)
         service.failed.connect(self._failed)
         self.setMaximumHeight(470)
 
     def clear(self):
         self.service.cancel(self.key)
-        self.view.placeholder("PRÉVIA DA MÍDIA\nAguardando um link")
+        self.view.placeholder("Aguardando um link")
 
     def show_info(self, info):
         url = info.get("thumbnail")
         if not url:
             thumbnails = info.get("thumbnails") or []
             url = thumbnails[-1].get("url") if thumbnails else None
-        self.view.placeholder("CARREGANDO PRÉVIA…" if url else "SEM MINIATURA\nA fonte não forneceu uma imagem")
+        self.view.placeholder("CARREGANDO CAPA…" if url else "SEM MINIATURA\nA fonte não forneceu uma imagem")
         self.service.request(self.key, url)
 
     def _ready(self, key, image):

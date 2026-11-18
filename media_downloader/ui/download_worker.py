@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal, Slot
 
 from ..downloader.yt_dlp_wrapper import OperationCancelled, check_cancelled
+from ..downloader.transfer import TransferPaused
 
 
 class DownloadWorker(QObject):
@@ -14,11 +15,12 @@ class DownloadWorker(QObject):
     error = Signal(str)
     status = Signal(str)
     cancelled = Signal()
+    paused = Signal()
     details = Signal(dict)
     metadata = Signal(dict)
 
     def __init__(self, ydl_wrapper, url, format_id, outtmpl, postprocessors=None,
-                 *, destination=None, container="MP4", quality=None):
+                 *, destination=None, container="MP4", quality=None, transfer=None):
         super().__init__()
         self.ydl_wrapper = ydl_wrapper
         self.url = url
@@ -28,6 +30,7 @@ class DownloadWorker(QObject):
         self.cancel_event = Event()
         self._last_update = 0
         self.destination, self.container, self.quality = destination, container, quality
+        self.transfer = transfer
 
     def cancel(self):
         self.cancel_event.set()
@@ -39,7 +42,7 @@ class DownloadWorker(QObject):
             if now - self._last_update < 0.1:
                 return
             self._last_update = now
-            self.details.emit({key: data.get(key) for key in ("speed", "eta", "downloaded_bytes", "total_bytes")})
+            self.details.emit({key: data.get(key) for key in ("speed", "eta", "resumable")})
             total = data.get("total_bytes") or data.get("total_bytes_estimate")
             downloaded = data.get("downloaded_bytes") or 0
             # Reserve 100% for completed postprocessing and a verified final path.
@@ -69,7 +72,7 @@ class DownloadWorker(QObject):
             result = self.ydl_wrapper.download(
                 self.url, self.format_id, self.outtmpl, self.postprocessors,
                 progress_hook=self._progress, cancel_event=self.cancel_event,
-                status_hook=self.status.emit)
+                status_hook=self.status.emit, **({"transfer": self.transfer} if self.transfer else {}))
             check_cancelled(self.cancel_event)
             try:
                 self.metadata.emit({"size": Path(result).stat().st_size})
@@ -78,6 +81,8 @@ class DownloadWorker(QObject):
             self.progress.emit(100)
             self.completed.emit(result)
             success = True
+        except TransferPaused:
+            self.paused.emit()
         except Exception as exc:
             if isinstance(exc, OperationCancelled) or self.cancel_event.is_set():
                 self.cancelled.emit()

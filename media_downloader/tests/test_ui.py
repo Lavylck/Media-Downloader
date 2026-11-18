@@ -64,7 +64,7 @@ class DelayedWrapper(YtDlpWrapper):
         return INFO.copy()
 
     def download(self, url, format_id, outtmpl, postprocessors=None, progress_hook=None,
-                 *, cancel_event=None, status_hook=None):
+                 *, cancel_event=None, status_hook=None, transfer=None):
         self.download_calls += 1
         self.last_selection = (format_id, postprocessors)
         self.thread_ids.append(threading.get_ident())

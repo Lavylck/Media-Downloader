@@ -1,12 +1,11 @@
 from PySide6.QtGui import QIcon
 
-from .paths import resource_path
+from pathlib import Path
+
+ICON_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons"
+ICON_PNG = ICON_DIR / "media_downloader_icone_neon_transparente.png"
+ICON_ICO = ICON_DIR / "media_downloader_icone_oficial.ico"
 
 
 def app_icon():
-    # The supplied SVG is TEMPORARY, not an approved final brand.
-    for extension in ("ico", "png", "svg"):
-        path = resource_path("assets", f"icon.{extension}")
-        if path.is_file():
-            return QIcon(str(path))
-    return QIcon()
+    return QIcon(str(ICON_ICO))

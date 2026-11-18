@@ -108,7 +108,7 @@ class HistoryStore:
     def recover(self):
         with self.connection:
             self.connection.execute("""UPDATE downloads SET status='interrupted'
-                WHERE status IN ('pending','analyzing','downloading','converting','cancelling')""")
+                WHERE status IN ('pending','analyzing','downloading','converting','cancelling','pausing','paused')""")
         rows = self.connection.execute(
             "SELECT * FROM downloads WHERE status='interrupted' ORDER BY created LIMIT 1000").fetchall()
         return [self._record(row, False) for row in rows]

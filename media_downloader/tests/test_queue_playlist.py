@@ -72,16 +72,31 @@ class TestQueuePlaylist(unittest.TestCase):
         self.assertEqual(bad.state, "failed")
         self.assertEqual(good.state, "completed")
 
-    def test_cancel_pending_active_and_retry(self):
+    def test_only_waiting_item_can_pause_without_resume_capability(self):
+        first, second = self.item("first"), self.item("second")
+        self.queue.add([first, second])
+        self.queue.pause(second.id)
+        wait_until(lambda: first.state == "downloading")
+        self.queue.pause(first.id)
+        self.assertEqual(first.state, "downloading")
+        wait_until(lambda: not self.queue.busy)
+        self.assertEqual(second.state, "paused")
+        self.assertEqual(self.source.calls, [first.url])
+        self.queue.resume(second.id)
+        wait_until(lambda: not self.queue.busy)
+        self.assertEqual(second.state, "completed")
+
+    def test_cancel_pending_and_active_removes_both(self):
         first, second = self.item("first"), self.item("second")
         self.queue.add([first, second])
         self.queue.cancel(second.id)
         self.queue.cancel(first.id)
         wait_until(lambda: not self.queue.busy)
-        self.assertEqual([i.state for i in self.queue.items], ["cancelled", "cancelled"])
+        self.assertEqual(self.queue.items, [])
+        self.assertEqual([first.state, second.state], ["cancelled", "cancelled"])
         self.queue.retry(second.id)
         wait_until(lambda: not self.queue.busy)
-        self.assertEqual(second.state, "completed")
+        self.assertEqual(second.state, "cancelled")
 
     def test_playlist_group_cancel_and_remove(self):
         items = [self.item(str(n)) for n in range(3)]
@@ -92,7 +107,7 @@ class TestQueuePlaylist(unittest.TestCase):
         wait_until(lambda: not self.queue.busy)
         self.assertTrue(all(i.state == "cancelled" for i in items))
         self.queue.remove(items[1].id)
-        self.assertEqual(len(self.queue.items), 2)
+        self.assertEqual(len(self.queue.items), 0)
 
     def test_playlist_selection_and_unavailable_entries(self):
         panel = PlaylistPanel()

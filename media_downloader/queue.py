@@ -9,8 +9,9 @@ from uuid import uuid4
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot
 
 from .ui.download_worker import DownloadWorker
+from .downloader.transfer import Transfer
 
-ACTIVE = {"pending", "analyzing", "downloading", "converting", "cancelling"}
+ACTIVE = {"pending", "analyzing", "downloading", "converting", "cancelling", "pausing", "paused"}
 
 
 @dataclass
@@ -28,6 +29,7 @@ class QueueItem:
     id: str = field(default_factory=lambda: uuid4().hex)
     state: str = "pending"
     progress: int = 0
+    resumable: bool = False
     speed: float | None = None
     eta: float | None = None
     path: str = ""
@@ -58,6 +60,7 @@ class DownloadQueue(QObject):
         self.current = None
         self.stopping = False
         self.remove_after = set()
+        self.transfers = {}
 
     @property
     def busy(self):
@@ -103,7 +106,8 @@ class DownloadQueue(QObject):
         item.state = "analyzing"
         worker = DownloadWorker(
             self.wrapper, item.url, item.format_id, None, item.postprocessors,
-            destination=item.destination, container=item.container, quality=item.quality)
+            destination=item.destination, container=item.container, quality=item.quality,
+            transfer=self.transfers.setdefault(item.id, Transfer()))
         thread = QThread(self)
         self.thread, self.worker = thread, worker
         worker.moveToThread(thread)
@@ -115,6 +119,7 @@ class DownloadQueue(QObject):
         worker.completed.connect(self._completed, Qt.ConnectionType.QueuedConnection)
         worker.error.connect(self._error, Qt.ConnectionType.QueuedConnection)
         worker.cancelled.connect(self._cancelled, Qt.ConnectionType.QueuedConnection)
+        worker.paused.connect(self._paused, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(self._cleanup, Qt.ConnectionType.QueuedConnection)
@@ -124,17 +129,18 @@ class DownloadQueue(QObject):
 
     @Slot(int)
     def _progress(self, value):
-        if self.current.state != "cancelling":
+        if self.current.state not in ("cancelling", "pausing"):
             self.current.progress = value
             self._notify()
 
     @Slot(dict)
     def _details(self, data):
-        if self.current.state != "cancelling":
+        if self.current.state not in ("cancelling", "pausing"):
             previous = self.current.state
             self.current.state = "downloading"
             self.current.speed = data.get("speed")
             self.current.eta = data.get("eta")
+            self.current.resumable = bool(data.get("resumable"))
             self._notify(previous != self.current.state)
 
     @Slot(dict)
@@ -147,6 +153,7 @@ class DownloadQueue(QObject):
     @Slot(str)
     def _status(self, message):
         if self.current.state != "cancelling" and ("Processando" in message or "processando" in message):
+            self.transfers[self.current.id].pause.clear()
             self.current.state = "converting"
             self._notify(True)
 
@@ -169,18 +176,60 @@ class DownloadQueue(QObject):
         self._notify(True)
 
     @Slot()
+    def _paused(self):
+        self.current.state = "cancelled" if self.current.id in self.remove_after else "paused"
+        self.current.speed = self.current.eta = None
+        self._notify(True)
+
+    def pause(self, item_id):
+        item = self.get(item_id)
+        if self.stopping or not item:
+            return
+        if item.state == "pending":
+            item.state = "paused"
+        elif item is self.current and item.state == "downloading" and item.resumable:
+            item.state = "pausing"
+            self.transfers[item_id].pause.set()
+        else:
+            return
+        self.persist.emit(asdict(item))
+        self.item_changed.emit(item.id)
+        self.active_changed.emit()
+
+    def resume(self, item_id):
+        item = self.get(item_id)
+        if self.stopping or not item or item is self.current or item.state != "paused":
+            return
+        if transfer := self.transfers.get(item_id):
+            transfer.pause.clear()
+        item.state = "pending"
+        self.persist.emit(asdict(item))
+        self.item_changed.emit(item_id)
+        self._start_next()
+
+    def _discard(self, item):
+        if transfer := self.transfers.pop(item.id, None):
+            try:
+                transfer.discard()
+            except OSError as exc:
+                item.error = f"Não foi possível remover a pasta temporária: {exc}"
+                self.persist.emit(asdict(item))
+
+    @Slot()
     def _cleanup(self):
         if not self.thread.wait(0):
             QTimer.singleShot(10, self, self._cleanup)
             return
         item = self.current
-        if item.state in ACTIVE:
-            item.state = "cancelled" if self.stopping else "failed"
+        if item.state in ACTIVE and item.state != "paused":
+            item.state = "cancelled" if self.stopping or item.id in self.remove_after else "failed"
             item.error = item.error or "Operação encerrada sem arquivo final."
             self._notify(True)
         self.thread.deleteLater()
         self.thread = self.worker = None
         self.current = None
+        if item.state != "paused" or item.id in self.remove_after:
+            self._discard(item)
         self.item_finished.emit(item.id)
         if item.id in self.remove_after:
             self.items.remove(item)
@@ -194,30 +243,35 @@ class DownloadQueue(QObject):
         if item is None or item.state not in ACTIVE:
             return
         if item is self.current:
+            self.remove_after.add(item_id)
             item.state = "cancelling"
             self.worker.cancel()
         else:
             item.state = "cancelled"
+            self._discard(item)
         self.persist.emit(asdict(item))
         self.item_changed.emit(item.id)
+        if item is not self.current:
+            self.items.remove(item)
+            self.structure_changed.emit()
         self.active_changed.emit()
 
     def cancel_group(self, group):
-        for item in self.items:
+        for item in list(self.items):
             if item.group == group:
                 self.cancel(item.id)
 
     def cancel_all(self):
-        for item in self.items:
+        for item in list(self.items):
             self.cancel(item.id)
 
     def remove(self, item_id):
         item = self.get(item_id)
-        if item is self.current and item is not None:
+        if item and item.state in ACTIVE:
+            self.cancel(item_id)
+        elif item is self.current and item is not None:
             self.remove_after.add(item_id)
-            self.cancel(item_id)
         elif item:
-            self.cancel(item_id)
             self.items.remove(item)
             self.structure_changed.emit()
 

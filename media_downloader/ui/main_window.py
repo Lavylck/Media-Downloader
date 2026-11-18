@@ -2,6 +2,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from PySide6.QtCore import QThread, QTimer, Qt, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QBoxLayout, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
     QInputDialog, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget,
@@ -12,7 +13,7 @@ from .analysis_worker import AnalysisWorker
 from .download_worker import DownloadWorker
 from .theme import apply_theme, set_style_property
 from .preview import PreviewPanel, ThumbnailService
-from ..resources import app_icon
+from ..resources import app_icon, ICON_PNG
 from ..queue import DownloadQueue, QueueItem
 from .queue_panel import QueuePanel, STATE_NAMES
 from .playlist_panel import PlaylistPanel
@@ -52,6 +53,9 @@ class MainWindow(QMainWindow):
         self._cancel_requested = False
         self._playlist_pending_offset = None
         self._format_edited = False
+        self._resetting = False
+        self._reset_item = None
+        self._form_cleared = False
         self.analysis_timer = QTimer(self)
         self.analysis_timer.setSingleShot(True)
         self.analysis_timer.setInterval(analysis_debounce_ms)
@@ -101,8 +105,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(26, 22, 26, 22)
         layout.setSpacing(14)
         header = QHBoxLayout()
-        mark = label("MD", "brandMark")
+        mark = label("", "brandMark")
         mark.setFixedSize(50, 50)
+        mark.setPixmap(QIcon(str(ICON_PNG)).pixmap(mark.size(), self.devicePixelRatioF()))
+        mark.setAccessibleName("Media Downloader")
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.addWidget(mark)
         brand = QVBoxLayout()
@@ -113,7 +119,6 @@ class MainWindow(QMainWindow):
             heading.setWordWrap(True)
             brand.addWidget(heading)
         header.addLayout(brand, 1)
-        header.addWidget(label("CYBERPUNK / V3", "edition"))
         layout.addLayout(header)
         self.content_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         layout.addLayout(self.content_layout)
@@ -134,6 +139,12 @@ class MainWindow(QMainWindow):
         self.url_edit.setAccessibleName("URL da mídia")
         self.url_edit.setPlaceholderText("Cole seu link aqui…")
         self.url_edit.setClearButtonEnabled(True)
+        self.paste_action = self.url_edit.addAction(
+            QIcon(str(Path(__file__).parent / "themes/paste.svg")), QLineEdit.ActionPosition.TrailingPosition)
+        self.paste_action.setText("Colar URL")
+        self.paste_action.setToolTip("Colar URL da área de transferência")
+        self.paste_action.triggered.connect(self.url_edit.paste)
+        self.url_edit.textChanged.connect(lambda text: self.paste_action.setVisible(not text))
         self.url_edit.setMinimumHeight(44)
         self.url_edit.textChanged.connect(self._on_url_changed)
         self.url_edit.returnPressed.connect(self.analyze_url)
@@ -282,13 +293,14 @@ class MainWindow(QMainWindow):
         return self.analysis_thread is not None or self.queue.busy
 
     def _update_controls(self):
-        idle = self.analysis_thread is None and not self._closing
+        editable = not (self._closing or self._resetting)
+        idle = self.analysis_thread is None and editable
         self.analyze_btn.setEnabled(idle)
         self.format_combo.setEnabled(idle)
         for widget in (self.url_edit, self.dest_edit, self.dest_btn):
-            widget.setEnabled(not self._closing)
-        self.add_link_btn.setEnabled(not self._closing and bool(self.dest_edit.text().strip()))
-        self.source_mode.setEnabled(not self._closing)
+            widget.setEnabled(editable)
+        self.add_link_btn.setEnabled(editable and bool(self.dest_edit.text().strip()))
+        self.source_mode.setEnabled(editable)
         self.quality_combo.setEnabled(idle and self.quality_combo.count() > 0)
         self.download_btn.setEnabled(idle and self.media_info is not None
                                      and self.analyzed_url == self.url_edit.text().strip()
@@ -296,12 +308,10 @@ class MainWindow(QMainWindow):
                                      and self.quality_combo.count() > 0
                                      and (self.media_info.get("_type") != "playlist"
                                           or bool(self.playlist_panel.selected)))
-        self.cancel_btn.setEnabled(not self._closing and (
-            (self.busy and not self._cancelling) or self.analysis_timer.isActive()
-            or self._auto_pending))
+        self.cancel_btn.setEnabled(editable)
         if self._closing:
             phase, caption = "ENCERRANDO", "Encerrando…"
-        elif self._cancelling and self.busy:
+        elif self._resetting or self._cancelling and self.busy:
             phase, caption = "AGUARDANDO TAREFA ATUAL", "Aguarde…"
         elif self.analysis_in_progress:
             phase, caption = "ANALISANDO FONTE", "Analisando…"
@@ -312,7 +322,7 @@ class MainWindow(QMainWindow):
             caption = (f"+  Adicionar à fila ({len(self.playlist_panel.selected)})"
                        if self.media_info and self.media_info.get("_type") == "playlist"
                        else f"{'+  Adicionar' if self.queue.busy else '↓  Baixar'} {self.format_combo.currentText()}")
-            if self.queue.current:
+            if self.queue.current and not self._form_cleared:
                 phase = f"FILA • {STATE_NAMES.get(self.queue.current.state, '')}"
                 caption = f"{STATE_NAMES.get(self.queue.current.state, 'Na fila')} · + Adicionar"
             elif self.last_output:
@@ -341,6 +351,8 @@ class MainWindow(QMainWindow):
         if url == self._input_url or self._closing:
             return
         self._input_url = url
+        if url:
+            self._form_cleared = False
         try:
             query = parse_qs(urlsplit(url).query) if url.startswith(("http://", "https://")) else {}
         except ValueError:
@@ -612,7 +624,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _queue_item_changed(self, item_id):
         item = self.queue.get(item_id)
-        if item is self.queue.current and not self.analysis_in_progress:
+        if item is self.queue.current and not (self.analysis_in_progress or self._resetting or self._form_cleared):
             self._on_progress(item.progress)
             if item.state == "failed":
                 self._on_error(item.error)
@@ -622,6 +634,13 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _queue_finished(self, item_id):
+        if self._resetting:
+            if self._reset_item == item_id:
+                self._reset_item = None
+            self._finish_reset()
+            return
+        if self._form_cleared:
+            return
         item = self.queue.get(item_id)
         if item and item.state == "completed":
             self.last_output = item.path
@@ -707,6 +726,8 @@ class MainWindow(QMainWindow):
             self._on_cancelled()
         self._cancel_requested = False
         self._cancelling = False
+        if self._resetting:
+            self._finish_reset()
         if self.progress.maximum() == 0:
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
@@ -730,6 +751,9 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def cancel_operation(self):
+        if self._closing or self._resetting:
+            return
+        self._resetting = True
         self.analysis_timer.stop()
         self._auto_pending = False
         self._attempted_revision = self._url_revision
@@ -737,15 +761,28 @@ class MainWindow(QMainWindow):
         self.playlist_panel.auto_all = False
         self._cancel_requested = bool(self.analysis_in_progress)
         self._cancelling = bool(self.analysis_in_progress)
-        if self.analysis_in_progress:
-            self._invalidate_analysis()
+        self._active_request_id = None
+        if self.analysis_worker:
             self.analysis_worker.cancel()
-        elif self.queue.current:
-            self.queue.cancel(self.queue.current.id)
-        self._set_status("Cancelando… aguardando a etapa de rede/FFmpeg terminar."
-                         if self.busy else "Análise automática cancelada. Use Analisar para tentar novamente.")
-        if not self.busy:
-            self._cancelling = False
+        current = self.queue.current
+        self._reset_item = current.id if current else None
+        if current:
+            self.queue.cancel(current.id)
+        self._set_status("Cancelando… aguardando o encerramento da tarefa.")
+        self._finish_reset()
+        self._update_controls()
+
+    def _finish_reset(self):
+        if self.analysis_thread is not None or self._reset_item is not None:
+            return
+        self.url_edit.clear()
+        self._invalidate_analysis()
+        self.last_output = None
+        self._resetting = self._cancelling = self._cancel_requested = False
+        self._form_cleared = True
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self._set_status("Operação cancelada. Cole um novo link.")
         self._update_controls()
 
     def closeEvent(self, event):
@@ -755,7 +792,8 @@ class MainWindow(QMainWindow):
         self._playlist_pending_offset = None
         self.queue.close()
         if self.busy:
-            self.cancel_operation()
+            if self.analysis_worker:
+                self.analysis_worker.cancel()
             self._set_status("Encerrando com segurança… aguardando rede/FFmpeg.")
             event.ignore()
         else:

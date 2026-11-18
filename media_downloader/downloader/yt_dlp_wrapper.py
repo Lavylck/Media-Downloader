@@ -6,6 +6,7 @@ import shutil
 from urllib.parse import urlsplit
 from itertools import islice
 from ..paths import tool_path
+from .transfer import TransferDL, TransferPaused
 
 import yt_dlp
 from yt_dlp.postprocessor import PostProcessor
@@ -256,7 +257,7 @@ class YtDlpWrapper:
         return str(Path(directory) / f"%(title).100s [%(id).40s] [{container.lower()}-{label}].%(ext)s")
 
     def download(self, url, format_id, outtmpl, postprocessors=None, progress_hook=None,
-                 *, cancel_event=None, status_hook=None):
+                 *, cancel_event=None, status_hook=None, transfer=None):
         validate_url(url)
         check_cancelled(cancel_event)
         if not tool_path("ffmpeg") or not tool_path("ffprobe"):
@@ -267,6 +268,13 @@ class YtDlpWrapper:
 
         def progress(data):
             check_cancelled(cancel_event)
+            if transfer and data.get("status") == "downloading":
+                data["resumable"] = ydl.resumable and bool(data.get("tmpfilename"))
+                if data["resumable"] and transfer.pause.is_set():
+                    transfer.partial = Path(data["tmpfilename"])
+                    transfer.offset = data["downloaded_bytes"]
+                    transfer.format_id = format_id
+                    raise TransferPaused()
             if progress_hook:
                 progress_hook(data)
 
@@ -284,7 +292,11 @@ class YtDlpWrapper:
             "progress_hooks": [progress],
             "postprocessor_hooks": [postprocess],
         })
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        if transfer:
+            template = Path(outtmpl)
+            home = str(template.parent).replace("%%", "%")
+            opts.update(outtmpl=template.name, paths={"home": home, "temp": transfer.workspace(home)})
+        with (TransferDL if transfer else yt_dlp.YoutubeDL)(opts) as ydl:
             if not audio:
                 ydl.add_post_processor(_EnsureMP4(ydl))
             ydl.add_post_processor(_FinalPath(ydl, paths), when="after_move")
@@ -296,6 +308,16 @@ class YtDlpWrapper:
                     status_hook("Arquivo já existente; preservado.")
                 return str(target)
             target.parent.mkdir(parents=True, exist_ok=True)
+            if transfer:
+                ydl.transfer = transfer
+                if info.get("protocol") in ("https", "http") and not info.get("requested_formats"):
+                    ydl.media_url = info.get("url")
+                if transfer.offset:
+                    expected = Path(ydl.prepare_filename(info, "temp") + ".part")
+                    if (not ydl.media_url or format_id != transfer.format_id or
+                            expected != transfer.partial or not expected.is_file() or
+                            expected.stat().st_size != transfer.offset):
+                        raise ValueError("O parcial não corresponde à seleção. Tente novamente do início.")
             ydl.process_ie_result(info, download=True)
         check_cancelled(cancel_event)
         if not paths:

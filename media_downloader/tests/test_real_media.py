@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 from threading import Thread
 import unittest
 
@@ -16,7 +17,7 @@ from media_downloader.tests.test_ui import wait_until
 from media_downloader.ui.main_window import MainWindow
 from PySide6.QtCore import QCoreApplication, QEvent, QTimer, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QToolButton
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -252,3 +253,101 @@ class TestRealMedia(unittest.TestCase):
         entries = first["entries"] + second["entries"]
         self.assertEqual(len({entry["url"] for entry in entries}), 103)
         self.assertEqual([entry["index"] for entry in entries], list(range(1, 104)))
+
+    def test_paste_pause_resume_range_then_cancel_and_clear_form(self):
+        # Real MP4 with a valid padding atom; slow delivery leaves time to click.
+        payload = (self.source / "sample.mp4").read_bytes() + (1048584).to_bytes(4, "big") + b"free" + bytes(1048576)
+        ranges = []
+
+        class Handler(QuietHandler):
+            def do_GET(self):
+                offset = int(self.headers.get("Range", "bytes=0-")[6:].split("-")[0])
+                if offset:
+                    ranges.append((offset, self.headers.get("If-Range")))
+                self.send_response(206 if offset else 200)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(len(payload) - offset))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("ETag", '"fixture"')
+                if offset:
+                    self.send_header("Content-Range", f"bytes {offset}-{len(payload)-1}/{len(payload)}")
+                self.end_headers()
+                try:
+                    for pos in range(offset, len(payload), 8192):
+                        self.wfile.write(payload[pos:pos+8192])
+                        time.sleep(.012)
+                except ConnectionError:
+                    pass
+
+        with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            win = MainWindow()
+            win.show()
+            url = f"http://127.0.0.1:{server.server_port}/range.mp4"
+            clipboard = QApplication.clipboard()
+            original = clipboard.text()
+            try:
+                win.dest_edit.setText(str(self.dest))
+                button = next(b for b in win.url_edit.findChildren(QToolButton)
+                              if b.defaultAction() == win.paste_action)
+                clipboard.setText(url)
+                QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+                wait_until(lambda: win.download_btn.isEnabled(), 10000)
+                self.assertFalse(win.paste_action.isVisible())
+                win.download_btn.click()
+                first = win.queue.current
+                win.add_urls([self.base_url + "sample.mp4"])
+                second = win.queue.items[1]
+                panel = win.queue_panel
+                wait_until(lambda: first.resumable, 10000)
+                panel.cards[first.id].pause.click()
+                wait_until(lambda: not win.queue.busy, 10000)
+                self.assertEqual(first.state, "paused", first.error)
+                self.assertEqual(second.state, "completed", second.error)
+                partial = win.queue.transfers[first.id].partial
+                saved = partial.stat().st_size
+                self.assertTrue(0 < saved < len(payload))
+                panel.cards[first.id].pause.click()
+                wait_until(lambda: not win.queue.busy, 15000)
+                self.assertEqual(first.state, "completed", first.error)
+                self.assertIn((saved, '"fixture"'), ranges)
+                self.assertEqual(Path(first.path).read_bytes(), payload)
+                self.assertFalse(partial.parent.exists())
+                self.assertTrue(win.cancel_btn.isEnabled())
+                win.cancel_btn.click()
+                self.assertEqual(win.url_edit.text(), "")
+                self.assertTrue(win.paste_action.isVisible())
+                self.assertEqual(win.progress.value(), 0)
+                self.assertIsNone(win.media_info)
+                self.assertEqual(win.quality_combo.count(), 0)
+                self.assertTrue(win.preview.view.image.isNull())
+
+                # Main Cancel waits for THIS worker and preserves a queued sibling.
+                win.url_edit.setText(url.replace("range.mp4", "cancel.mp4"))
+                win.analyze_url()
+                wait_until(lambda: win.download_btn.isEnabled(), 10000)
+                win.start_download()
+                cancelled = win.queue.current
+                win.add_urls([self.base_url + "index.html"])
+                sibling = win.queue.items[-1]
+                wait_until(lambda: cancelled.resumable, 10000)
+                workdir = Path(win.queue.transfers[cancelled.id].directory.name)
+                win.tabs.setCurrentIndex(0)
+                win.cancel_btn.click()
+                wait_until(lambda: not win.queue.busy, 15000)
+                self.assertFalse(workdir.exists())
+                self.assertIsNone(win.queue.get(cancelled.id))
+                self.assertEqual(cancelled.state, "cancelled")
+                self.assertEqual(sibling.state, "completed")
+                self.assertEqual(win.url_edit.text(), "")
+                self.assertEqual(win.progress.value(), 0)
+                self.assertTrue(Path(first.path).is_file())
+            finally:
+                clipboard.setText(original)
+                win.close()
+                wait_until(lambda: win.history.is_closed, 20000)
+                win.deleteLater()
+                QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+                server.shutdown()
+                thread.join()
